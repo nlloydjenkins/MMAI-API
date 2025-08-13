@@ -37,11 +37,23 @@ jobs:
           npm run test --if-present
           popd
 
+      - name: 'Install production dependencies in dist folder'
+        shell: pwsh
+        run: |
+          pushd './dist'
+          npm install --production --omit=dev
+          popd
+
+      - name: 'Create deployment package'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path './dist/*' -DestinationPath './deployment-package.zip'
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: './deployment-package.zip'
 
   deploy:
     runs-on: windows-latest
@@ -55,6 +67,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
+
+      - name: 'Extract deployment package'
+        shell: pwsh
+        run: |
+          Expand-Archive -Path './deployment-package.zip' -DestinationPath './deployment'
       
       - name: Login to Azure
         uses: azure/login@v2
@@ -68,6 +85,5 @@ jobs:
         id: fa
         with:
           app-name: 'mmai-func-ep-staging'
-          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-
-          
+          slot-name: 'Production'
+          package: './deployment'
