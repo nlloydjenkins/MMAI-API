@@ -5,6 +5,7 @@ import {
   InvocationContext,
 } from "@azure/functions";
 import { createSuccessResponse } from "../../shared/utils";
+import versionInfo from "../../version.json";
 
 export async function health(
   request: HttpRequest,
@@ -14,7 +15,9 @@ export async function health(
   return createSuccessResponse({
     status: "healthy",
     timestamp: new Date().toISOString(),
-    version: "1.0.0",
+    version: versionInfo.version,
+    buildDate: versionInfo.buildDate,
+    buildNumber: versionInfo.buildNumber,
     env: {
       FUNCTIONS_WORKER_RUNTIME: process.env.FUNCTIONS_WORKER_RUNTIME || null,
       AZURE_STORAGE_ACCOUNT_NAME:

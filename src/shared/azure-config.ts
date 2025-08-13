@@ -67,8 +67,8 @@ export const getAzureConfig = (): AzureConfig => {
     openai: {
       endpoint: (process.env.AZURE_OPENAI_ENDPOINT && !process.env.AZURE_OPENAI_ENDPOINT.includes('REPLACE_WITH_YOUR_ENDPOINT_HERE')) ? process.env.AZURE_OPENAI_ENDPOINT : "https://openai-meetingmate.openai.azure.com/",
       apiKey: (process.env.AZURE_OPENAI_API_KEY && !process.env.AZURE_OPENAI_API_KEY.includes('REPLACE_WITH_YOUR_KEY_VALUE_HERE')) ? process.env.AZURE_OPENAI_API_KEY : "",
-      deployment: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o",
-      apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2025-01-01-preview",
+      deployment: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4.1",
+      apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview",
     },
     projects: {
       tableName: "projects",

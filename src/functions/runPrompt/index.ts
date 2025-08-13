@@ -231,8 +231,12 @@ Note: No specific documents were found in your knowledge base related to this qu
               content: contextualPrompt,
             },
           ],
-          max_tokens: 1500,
-          temperature: 0.7,
+          model: config.openai.deployment,
+          max_completion_tokens: 1500,
+          temperature: 1.0,
+          top_p: 1.0,
+          frequency_penalty: 0.0,
+          presence_penalty: 0.0,
         }),
       });
 
