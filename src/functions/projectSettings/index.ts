@@ -24,6 +24,10 @@ interface ProjectSettingsEntity {
   showAgenda?: boolean;
   showActions?: boolean;
   showQuestions?: boolean;
+  // Panel visibility states
+  showContext?: boolean;
+  showAnswers?: boolean;
+  showInsights?: boolean;
   // Panel collapse states
   knowledgeCollapsed?: boolean;
   agendaCollapsed?: boolean;
@@ -68,6 +72,10 @@ interface ProjectSettings {
   showAgenda?: boolean;
   showActions?: boolean;
   showQuestions?: boolean;
+  // Panel visibility states
+  showContext?: boolean;
+  showAnswers?: boolean;
+  showInsights?: boolean;
   // Panel collapse states
   knowledgeCollapsed?: boolean;
   agendaCollapsed?: boolean;
@@ -182,6 +190,10 @@ async function getProjectSettings(
       showAgenda: entity.showAgenda,
       showActions: entity.showActions,
       showQuestions: entity.showQuestions,
+      // Panel visibility states
+      showContext: entity.showContext,
+      showAnswers: entity.showAnswers,
+      showInsights: entity.showInsights,
       // Panel collapse states
       knowledgeCollapsed: entity.knowledgeCollapsed,
       agendaCollapsed: entity.agendaCollapsed,
@@ -281,6 +293,10 @@ async function saveProjectSettings(
       showAgenda: requestBody.settings.showAgenda,
       showActions: requestBody.settings.showActions,
       showQuestions: requestBody.settings.showQuestions,
+      // Panel visibility states
+      showContext: requestBody.settings.showContext,
+      showAnswers: requestBody.settings.showAnswers,
+      showInsights: requestBody.settings.showInsights,
       // Panel collapse states
       knowledgeCollapsed: requestBody.settings.knowledgeCollapsed,
       agendaCollapsed: requestBody.settings.agendaCollapsed,
