@@ -1,0 +1,43 @@
+{
+  "name": "ideaforge-api",
+  "version": "1.0.0",
+  "description": "Azure Functions API for IdeaForge application",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf ./dist",
+    "clean:build": "npm run clean && npm run build",
+    "watch": "tsc -w",
+    "prestart": "npm run build",
+    "start": "func start",
+    "init-tables": "node scripts/init-tables.js",
+    "init-tables-azure": "node scripts/init-tables-azure.js",
+    "cleanup-orphan-blobs": "node scripts/cleanup-orphan-blobs.js",
+    "check-project-id-stats": "node scripts/check-project-id-stats.js",
+    "test": "echo \"No tests yet\" && exit 0",
+    "clear-all-data": "node scripts/clear-all-data.js"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.2.0",
+    "@azure/functions": "^4.5.0",
+    "@azure/identity": "^4.0.0",
+    "@azure/search-documents": "^12.0.0",
+    "@azure/storage-blob": "^12.17.0",
+    "@types/archiver": "^6.0.3",
+    "archiver": "^7.0.1",
+    "axios": "^1.7.0",
+    "busboy": "^1.6.0",
+    "openai": "^4.52.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/busboy": "^1.5.4",
+    "@types/node": "^20.14.0",
+    "@types/uuid": "^10.0.0",
+    "azure-functions-core-tools": "^4.0.5",
+    "typescript": "^5.5.0"
+  }
+}
