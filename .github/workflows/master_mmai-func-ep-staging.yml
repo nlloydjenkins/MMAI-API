@@ -68,6 +68,6 @@ jobs:
         id: fa
         with:
           app-name: 'mmai-func-ep-staging'
-          slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+
           
