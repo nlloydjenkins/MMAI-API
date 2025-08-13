@@ -85,5 +85,4 @@ jobs:
         id: fa
         with:
           app-name: 'mmai-func-ep-staging'
-          slot-name: 'Production'
           package: './deployment'
