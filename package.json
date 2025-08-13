@@ -7,8 +7,12 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsc",
-    "clean": "rm -rf ./dist",
+    "build": "npm run build:compile && npm run build:copy",
+    "build:compile": "tsc",
+    "build:copy": "npm run build:copy-host && npm run build:copy-package",
+    "build:copy-host": "copy host.json dist\\",
+    "build:copy-package": "copy package.json dist\\",
+    "clean": "if exist dist rmdir /s /q dist",
     "clean:build": "npm run clean && npm run build",
     "watch": "tsc -w",
     "prestart": "npm run build",
