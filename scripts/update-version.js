@@ -15,7 +15,7 @@ try {
   const versionInfo = JSON.parse(readFileSync(versionPath, "utf8"));
 
   // Parse the current version (e.g., "0.3.1" -> [0, 3, 1])
-  const versionParts = versionInfo.version.split('.').map(Number);
+  const versionParts = versionInfo.version.split(".").map(Number);
   const [major, minor, patch] = versionParts;
 
   // Increment patch version automatically

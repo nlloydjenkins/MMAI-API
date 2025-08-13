@@ -37,10 +37,13 @@ export interface AzureConfig {
 }
 
 export const getAzureConfig = (): AzureConfig => {
-  console.log("🔧 [CONFIG DEBUG] Creating Azure configuration for Azure Functions with AAD authentication");
+  console.log(
+    "🔧 [CONFIG DEBUG] Creating Azure configuration for Azure Functions with AAD authentication"
+  );
 
   // Use AAD authentication for Azure Functions - no connection strings needed!
-  const storageAccountName = process.env.AZURE_STORAGE_ACCOUNT_NAME || "storagemmai";
+  const storageAccountName =
+    process.env.AZURE_STORAGE_ACCOUNT_NAME || "storagemmai";
 
   console.log("🔧 [CONFIG DEBUG] Environment check for AAD authentication:", {
     storageAccountName,
@@ -60,13 +63,27 @@ export const getAzureConfig = (): AzureConfig => {
       accountName: storageAccountName,
     },
     search: {
-      endpoint: process.env.AZURE_SEARCH_ENDPOINT || "https://aisearchmmai.search.windows.net",
+      endpoint:
+        process.env.AZURE_SEARCH_ENDPOINT ||
+        "https://aisearchmmai.search.windows.net",
       apiKey: process.env.AZURE_SEARCH_API_KEY || "",
       indexName: process.env.AZURE_SEARCH_INDEX_NAME || "documents-index",
     },
     openai: {
-      endpoint: (process.env.AZURE_OPENAI_ENDPOINT && !process.env.AZURE_OPENAI_ENDPOINT.includes('REPLACE_WITH_YOUR_ENDPOINT_HERE')) ? process.env.AZURE_OPENAI_ENDPOINT : "https://openai-meetingmate.openai.azure.com/",
-      apiKey: (process.env.AZURE_OPENAI_API_KEY && !process.env.AZURE_OPENAI_API_KEY.includes('REPLACE_WITH_YOUR_KEY_VALUE_HERE')) ? process.env.AZURE_OPENAI_API_KEY : "",
+      endpoint:
+        process.env.AZURE_OPENAI_ENDPOINT &&
+        !process.env.AZURE_OPENAI_ENDPOINT.includes(
+          "REPLACE_WITH_YOUR_ENDPOINT_HERE"
+        )
+          ? process.env.AZURE_OPENAI_ENDPOINT
+          : "https://openai-meetingmate.openai.azure.com/",
+      apiKey:
+        process.env.AZURE_OPENAI_API_KEY &&
+        !process.env.AZURE_OPENAI_API_KEY.includes(
+          "REPLACE_WITH_YOUR_KEY_VALUE_HERE"
+        )
+          ? process.env.AZURE_OPENAI_API_KEY
+          : "",
       deployment: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4.1",
       apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview",
     },
@@ -81,25 +98,28 @@ export const getAzureConfig = (): AzureConfig => {
     },
   };
 
-  console.log("🔧 [CONFIG DEBUG] Configuration created for Azure Functions with AAD:", {
-    storage: {
-      accountName: config.storage.accountName,
-      useAzureBlob: config.storage.useAzureBlob,
-      useAzureTable: config.storage.useAzureTable,
-      authMethod: "DefaultAzureCredential (Managed Identity)",
-    },
-    search: {
-      hasEndpoint: !!config.search.endpoint,
-      hasApiKey: !!config.search.apiKey,
-      indexName: config.search.indexName,
-    },
-    openai: {
-      hasEndpoint: !!config.openai.endpoint,
-      hasApiKey: !!config.openai.apiKey,
-      deployment: config.openai.deployment,
-      apiVersion: config.openai.apiVersion,
-    },
-  });
+  console.log(
+    "🔧 [CONFIG DEBUG] Configuration created for Azure Functions with AAD:",
+    {
+      storage: {
+        accountName: config.storage.accountName,
+        useAzureBlob: config.storage.useAzureBlob,
+        useAzureTable: config.storage.useAzureTable,
+        authMethod: "DefaultAzureCredential (Managed Identity)",
+      },
+      search: {
+        hasEndpoint: !!config.search.endpoint,
+        hasApiKey: !!config.search.apiKey,
+        indexName: config.search.indexName,
+      },
+      openai: {
+        hasEndpoint: !!config.openai.endpoint,
+        hasApiKey: !!config.openai.apiKey,
+        deployment: config.openai.deployment,
+        apiVersion: config.openai.apiVersion,
+      },
+    }
+  );
 
   return config;
 };
@@ -131,10 +151,14 @@ export class AzureClients {
   public getTableClient(): TableClient {
     if (!this._projectsTableClient) {
       if (!this.config.storage.accountName) {
-        throw new Error("❌ Azure Storage Account Name not configured. Please set AZURE_STORAGE_ACCOUNT_NAME in Function App settings.");
+        throw new Error(
+          "❌ Azure Storage Account Name not configured. Please set AZURE_STORAGE_ACCOUNT_NAME in Function App settings."
+        );
       }
-      
-      console.log("🔧 [CLIENTS DEBUG] Creating table client with managed identity for Azure Functions");
+
+      console.log(
+        "🔧 [CLIENTS DEBUG] Creating table client with managed identity for Azure Functions"
+      );
       const credential = new DefaultAzureCredential();
       this._projectsTableClient = new TableClient(
         `https://${this.config.storage.accountName}.table.core.windows.net`,
@@ -148,10 +172,14 @@ export class AzureClients {
   public getFilesTableClient(): TableClient {
     if (!this._filesTableClient) {
       if (!this.config.storage.accountName) {
-        throw new Error("❌ Azure Storage Account Name not configured. Please set AZURE_STORAGE_ACCOUNT_NAME in Function App settings.");
+        throw new Error(
+          "❌ Azure Storage Account Name not configured. Please set AZURE_STORAGE_ACCOUNT_NAME in Function App settings."
+        );
       }
-      
-      console.log("🔧 [CLIENTS DEBUG] Creating files table client with managed identity for Azure Functions");
+
+      console.log(
+        "🔧 [CLIENTS DEBUG] Creating files table client with managed identity for Azure Functions"
+      );
       const credential = new DefaultAzureCredential();
       this._filesTableClient = new TableClient(
         `https://${this.config.storage.accountName}.table.core.windows.net`,
@@ -165,10 +193,14 @@ export class AzureClients {
   public getBlobServiceClient(): BlobServiceClient {
     if (!this._blobServiceClient) {
       if (!this.config.storage.accountName) {
-        throw new Error("❌ Azure Storage Account Name not configured. Please set AZURE_STORAGE_ACCOUNT_NAME in Function App settings.");
+        throw new Error(
+          "❌ Azure Storage Account Name not configured. Please set AZURE_STORAGE_ACCOUNT_NAME in Function App settings."
+        );
       }
-      
-      console.log("🔧 [CLIENTS DEBUG] Creating BlobServiceClient with managed identity for Azure Functions");
+
+      console.log(
+        "🔧 [CLIENTS DEBUG] Creating BlobServiceClient with managed identity for Azure Functions"
+      );
       const credential = new DefaultAzureCredential();
       this._blobServiceClient = new BlobServiceClient(
         `https://${this.config.storage.accountName}.blob.core.windows.net`,
