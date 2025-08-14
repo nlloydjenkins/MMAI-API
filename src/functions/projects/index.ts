@@ -104,7 +104,7 @@ async function createProject(
 ): Promise<HttpResponseInit> {
   // Get current user for audit trail
   const currentUser = getCurrentUser(request);
-  
+
   // Parse request body
   const body = (await request.json()) as CreateProjectRequest;
 

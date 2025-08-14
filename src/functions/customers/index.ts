@@ -12,10 +12,7 @@ import {
   handleCors,
   validateRequiredFields,
 } from "../../shared/utils";
-import {
-  requireAuthentication,
-  logAuthInfo,
-} from "../../shared/auth";
+import { requireAuthentication, logAuthInfo } from "../../shared/auth";
 import {
   CreateCustomerRequest,
   CreateCustomerResponse,
