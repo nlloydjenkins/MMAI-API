@@ -16,6 +16,8 @@ export interface ProjectEntity {
   goals?: string; // Store goal content directly in project
   customerId?: string; // Add customer relationship
   deadline?: string; // Add deadline field as ISO string
+  createdBy?: string; // User who created the project
+  createdByUserId?: string; // User ID who created the project
   timestamp?: Date;
   etag?: string;
 }

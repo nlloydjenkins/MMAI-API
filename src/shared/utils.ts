@@ -12,7 +12,7 @@ export const createErrorResponse = (
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers":
-        "Content-Type, Authorization, Content-Disposition",
+        "Content-Type, Authorization, Content-Disposition, x-ms-client-principal",
     },
     body: JSON.stringify({
       error,
@@ -32,7 +32,7 @@ export const createSuccessResponse = (
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers":
-        "Content-Type, Authorization, Content-Disposition",
+        "Content-Type, Authorization, Content-Disposition, x-ms-client-principal",
     },
     body: JSON.stringify(data),
   };
@@ -46,7 +46,7 @@ export const handleCors = (request: HttpRequest): HttpResponseInit | null => {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers":
-          "Content-Type, Authorization, Content-Disposition",
+          "Content-Type, Authorization, Content-Disposition, x-ms-client-principal",
       },
     };
   }

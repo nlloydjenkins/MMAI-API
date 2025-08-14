@@ -13,6 +13,10 @@ import {
   validateRequiredFields,
 } from "../../shared/utils";
 import {
+  requireAuthentication,
+  logAuthInfo,
+} from "../../shared/auth";
+import {
   CreateCustomerRequest,
   CreateCustomerResponse,
   CustomerEntity,
@@ -32,6 +36,15 @@ export async function customersHandler(
   const corsResponse = handleCors(request);
   if (corsResponse) {
     return corsResponse;
+  }
+
+  // Log authentication info for debugging
+  logAuthInfo(request, context);
+
+  // Check authentication (bypassed in local development)
+  const authError = requireAuthentication(request, context);
+  if (authError) {
+    return authError;
   }
 
   try {

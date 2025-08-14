@@ -13,6 +13,11 @@ import {
   validateRequiredFields,
 } from "../../shared/utils";
 import {
+  requireAuthentication,
+  logAuthInfo,
+  getCurrentUser,
+} from "../../shared/auth";
+import {
   CreateProjectRequest,
   CreateProjectResponse,
   ProjectEntity,
@@ -32,6 +37,15 @@ export async function projectsHandler(
   const corsResponse = handleCors(request);
   if (corsResponse) {
     return corsResponse;
+  }
+
+  // Log authentication info for debugging
+  logAuthInfo(request, context);
+
+  // Check authentication (bypassed in local development)
+  const authError = requireAuthentication(request, context);
+  if (authError) {
+    return authError;
   }
 
   try {
@@ -88,6 +102,9 @@ async function createProject(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
+  // Get current user for audit trail
+  const currentUser = getCurrentUser(request);
+  
   // Parse request body
   const body = (await request.json()) as CreateProjectRequest;
 
@@ -134,6 +151,8 @@ async function createProject(
     createdAt: now.toISOString(),
     customerId: body.customerId,
     deadline: body.deadline, // Add deadline support
+    createdBy: currentUser?.userDetails || "System",
+    createdByUserId: currentUser?.userId || "system",
   };
 
   // Save to Table Storage
