@@ -50,6 +50,7 @@ interface ProjectSettingsEntity {
   cachedAgendaGeneratedAt?: Date;
   // Cached actions data
   cachedActionsContent?: string; // String content of actions
+  cachedActionItems?: string; // JSON string of ActionItem objects with statuses
   cachedActionsPrompt?: string; // Prompt used to generate actions
   cachedActionsGeneratedAt?: string; // ISO string timestamp
   // Cached questions data
@@ -98,6 +99,7 @@ interface ProjectSettings {
   cachedAgendaGeneratedAt?: Date;
   // Cached actions data
   cachedActionsContent?: string; // String content of actions
+  cachedActionItems?: any[]; // Array of ActionItem objects with statuses
   cachedActionsPrompt?: string; // Prompt used to generate actions
   cachedActionsGeneratedAt?: string; // ISO string timestamp
   // Cached questions data
@@ -216,6 +218,9 @@ async function getProjectSettings(
       cachedAgendaGeneratedAt: entity.cachedAgendaGeneratedAt,
       // Cached actions data
       cachedActionsContent: entity.cachedActionsContent,
+      cachedActionItems: entity.cachedActionItems
+        ? JSON.parse(entity.cachedActionItems)
+        : undefined,
       cachedActionsPrompt: entity.cachedActionsPrompt,
       cachedActionsGeneratedAt: entity.cachedActionsGeneratedAt,
       // Cached questions data
@@ -282,62 +287,100 @@ async function saveProjectSettings(
     const tableClient = azureClients.getTableClient();
 
     const now = new Date();
-    const entity: ProjectSettingsEntity = {
+
+    // Build a partial entity with only provided fields so we don't wipe existing data
+    const partialEntity: Partial<ProjectSettingsEntity> & {
+      partitionKey: string;
+      rowKey: string;
+      projectId: string;
+      updatedAt: Date;
+      createdAt?: Date;
+    } = {
       partitionKey: "settings",
       rowKey: projectId,
-      projectId: projectId,
-      promptTemplate: requestBody.settings.promptTemplate,
-      adviceTemplate: requestBody.settings.adviceTemplate,
-      aiRole: requestBody.settings.aiRole,
-      adviceSystemPrompt: requestBody.settings.adviceSystemPrompt,
-      showAgenda: requestBody.settings.showAgenda,
-      showActions: requestBody.settings.showActions,
-      showQuestions: requestBody.settings.showQuestions,
-      // Panel visibility states
-      showContext: requestBody.settings.showContext,
-      showAnswers: requestBody.settings.showAnswers,
-      showInsights: requestBody.settings.showInsights,
-      // Panel collapse states
-      knowledgeCollapsed: requestBody.settings.knowledgeCollapsed,
-      agendaCollapsed: requestBody.settings.agendaCollapsed,
-      newInfoCollapsed: requestBody.settings.newInfoCollapsed,
-      adviceCollapsed: requestBody.settings.adviceCollapsed,
-      adhocCollapsed: requestBody.settings.adhocCollapsed,
-      questionsCollapsed: requestBody.settings.questionsCollapsed,
-      actionsCollapsed: requestBody.settings.actionsCollapsed,
-      // UI states
-      showPrompts: requestBody.settings.showPrompts,
-      // Notepad content
-      notepadContent: requestBody.settings.notepadContent,
-      // Cached advice data
-      cachedAdvice: requestBody.settings.cachedAdvice,
-      cachedAdvicePrompt: requestBody.settings.cachedAdvicePrompt,
-      cachedAdviceGeneratedAt: requestBody.settings.cachedAdviceGeneratedAt,
-      // Cached agenda data
-      cachedAgendaContent: requestBody.settings.cachedAgendaContent,
-      cachedAgendaPrompt: requestBody.settings.cachedAgendaPrompt,
-      cachedAgendaGeneratedAt: requestBody.settings.cachedAgendaGeneratedAt,
-      // Cached actions data
-      cachedActionsContent: requestBody.settings.cachedActionsContent,
-      cachedActionsPrompt: requestBody.settings.cachedActionsPrompt,
-      cachedActionsGeneratedAt: requestBody.settings.cachedActionsGeneratedAt,
-      // Cached questions data
-      cachedQuestionsContent: requestBody.settings.cachedQuestionsContent,
-      cachedQuestionItems: requestBody.settings.cachedQuestionItems
-        ? JSON.stringify(requestBody.settings.cachedQuestionItems)
-        : undefined,
-      cachedQuestionsPrompt: requestBody.settings.cachedQuestionsPrompt,
-      cachedQuestionsGeneratedAt:
-        requestBody.settings.cachedQuestionsGeneratedAt,
-      // AdHoc panels data
-      adHocPanels: requestBody.settings.adHocPanels,
-      adHocPanelsContent: requestBody.settings.adHocPanelsContent,
-      createdAt: now,
+      projectId,
       updatedAt: now,
+      // createdAt will be set on insert automatically below
     };
 
-    // Use upsert to create or update
-    await tableClient.upsertEntity(entity, "Replace");
+    const s = requestBody.settings;
+
+    // Helper to conditionally assign if value !== undefined
+    const assignIfDefined = <K extends keyof ProjectSettingsEntity>(
+      key: K,
+      value: ProjectSettingsEntity[K] | undefined
+    ) => {
+      if (value !== undefined) {
+        partialEntity[key] = value as any;
+      }
+    };
+
+    assignIfDefined("promptTemplate", s.promptTemplate);
+    assignIfDefined("adviceTemplate", s.adviceTemplate);
+    assignIfDefined("aiRole", s.aiRole);
+    assignIfDefined("adviceSystemPrompt", s.adviceSystemPrompt);
+    assignIfDefined("showAgenda", s.showAgenda);
+    assignIfDefined("showActions", s.showActions);
+    assignIfDefined("showQuestions", s.showQuestions);
+    // Panel visibility states
+    assignIfDefined("showContext", s.showContext);
+    assignIfDefined("showAnswers", s.showAnswers);
+    assignIfDefined("showInsights", s.showInsights);
+    // Panel collapse states
+    assignIfDefined("knowledgeCollapsed", s.knowledgeCollapsed as any);
+    assignIfDefined("agendaCollapsed", s.agendaCollapsed as any);
+    assignIfDefined("newInfoCollapsed", s.newInfoCollapsed as any);
+    assignIfDefined("adviceCollapsed", s.adviceCollapsed as any);
+    assignIfDefined("adhocCollapsed", s.adhocCollapsed as any);
+    assignIfDefined("questionsCollapsed", s.questionsCollapsed as any);
+    assignIfDefined("actionsCollapsed", s.actionsCollapsed as any);
+    // UI states
+    assignIfDefined("showPrompts", s.showPrompts);
+    // Notepad content
+    assignIfDefined("notepadContent", s.notepadContent);
+    // Cached advice data
+    assignIfDefined("cachedAdvice", s.cachedAdvice);
+    assignIfDefined("cachedAdvicePrompt", s.cachedAdvicePrompt);
+    assignIfDefined(
+      "cachedAdviceGeneratedAt",
+      s.cachedAdviceGeneratedAt as any
+    );
+    // Cached agenda data
+    assignIfDefined("cachedAgendaContent", s.cachedAgendaContent);
+    assignIfDefined("cachedAgendaPrompt", s.cachedAgendaPrompt);
+    assignIfDefined(
+      "cachedAgendaGeneratedAt",
+      s.cachedAgendaGeneratedAt as any
+    );
+    // Cached actions data
+    assignIfDefined("cachedActionsContent", s.cachedActionsContent);
+    if (s.cachedActionItems !== undefined) {
+      partialEntity.cachedActionItems = JSON.stringify(s.cachedActionItems);
+    }
+    assignIfDefined("cachedActionsPrompt", s.cachedActionsPrompt);
+    assignIfDefined("cachedActionsGeneratedAt", s.cachedActionsGeneratedAt);
+    // Cached questions data
+    assignIfDefined("cachedQuestionsContent", s.cachedQuestionsContent);
+    if (s.cachedQuestionItems !== undefined) {
+      partialEntity.cachedQuestionItems = JSON.stringify(s.cachedQuestionItems);
+    }
+    assignIfDefined("cachedQuestionsPrompt", s.cachedQuestionsPrompt);
+    assignIfDefined("cachedQuestionsGeneratedAt", s.cachedQuestionsGeneratedAt);
+    // AdHoc panels data
+    assignIfDefined("adHocPanels", s.adHocPanels);
+    assignIfDefined("adHocPanelsContent", s.adHocPanelsContent);
+
+    // Try to see if entity exists to set createdAt only when inserting
+    try {
+      await tableClient.getEntity("settings", projectId);
+    } catch (e: any) {
+      if (e?.statusCode === 404) {
+        partialEntity.createdAt = now;
+      }
+    }
+
+    // Merge so unspecified fields are preserved
+    await tableClient.upsertEntity(partialEntity as any, "Merge");
 
     context.log(
       `Project settings saved successfully for project: ${projectId}`
