@@ -10,7 +10,6 @@ import {
   createSuccessResponse,
   handleCors,
   validateRequiredFields,
-  getDefaultAdviceSystemPrompt,
 } from "../../shared/utils";
 
 interface ProjectSettingsEntity {
@@ -20,7 +19,7 @@ interface ProjectSettingsEntity {
   promptTemplate?: string;
   adviceTemplate?: string;
   aiRole?: string;
-  adviceSystemPrompt?: string;
+  // adviceSystemPrompt deprecated
   showAgenda?: boolean;
   showActions?: boolean;
   showQuestions?: boolean;
@@ -71,7 +70,7 @@ interface ProjectSettings {
   promptTemplate?: string;
   adviceTemplate?: string;
   aiRole?: string;
-  adviceSystemPrompt?: string;
+  // adviceSystemPrompt deprecated
   showAgenda?: boolean;
   showActions?: boolean;
   showQuestions?: boolean;
@@ -191,8 +190,7 @@ async function getProjectSettings(
       promptTemplate: entity.promptTemplate,
       adviceTemplate: entity.adviceTemplate,
       aiRole: entity.aiRole,
-      adviceSystemPrompt:
-        entity.adviceSystemPrompt || getDefaultAdviceSystemPrompt(),
+      // adviceSystemPrompt removed from response; clients use global per-role system prompt
       showAgenda: entity.showAgenda,
       showActions: entity.showActions,
       showQuestions: entity.showQuestions,
@@ -248,12 +246,7 @@ async function getProjectSettings(
         `No settings found for project: ${projectId}, returning defaults`
       );
       // No settings found, return settings with default values
-      return createSuccessResponse({
-        settings: {
-          adviceSystemPrompt: getDefaultAdviceSystemPrompt(),
-          notepadContent: "",
-        },
-      });
+      return createSuccessResponse({ settings: { notepadContent: "" } });
     }
     context.log("Error getting project settings:", error);
     return createErrorResponse(500, "INTERNAL_ERROR", "Failed to get settings");
@@ -324,7 +317,7 @@ async function saveProjectSettings(
     assignIfDefined("promptTemplate", s.promptTemplate);
     assignIfDefined("adviceTemplate", s.adviceTemplate);
     assignIfDefined("aiRole", s.aiRole);
-    assignIfDefined("adviceSystemPrompt", s.adviceSystemPrompt);
+    // adviceSystemPrompt deprecated: ignore on save
     assignIfDefined("showAgenda", s.showAgenda);
     assignIfDefined("showActions", s.showActions);
     assignIfDefined("showQuestions", s.showQuestions);
