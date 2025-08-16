@@ -212,6 +212,16 @@ Note: No specific documents were found in your knowledge base related to this qu
     context.log("Calling Azure OpenAI URL:", openaiUrl);
 
     try {
+      // Extract generation settings (fallback to conservative defaults)
+      const temperature =
+        typeof (requestData as any).temperature === "number"
+          ? Math.max(0, Math.min(1, (requestData as any).temperature))
+          : 0.7;
+      const topP =
+        typeof (requestData as any).topP === "number"
+          ? Math.max(0, Math.min(1, (requestData as any).topP))
+          : 1.0;
+
       const response = await fetch(openaiUrl, {
         method: "POST",
         headers: {
@@ -232,9 +242,11 @@ Note: No specific documents were found in your knowledge base related to this qu
             },
           ],
           model: config.openai.deployment,
+          // Note: Azure OpenAI Chat Completions supports both max_tokens and max_completion_tokens in some API versions.
+          // Keep the existing field but can be adjusted if needed.
           max_completion_tokens: 1500,
-          temperature: 1.0,
-          top_p: 1.0,
+          temperature,
+          top_p: topP,
           frequency_penalty: 0.0,
           presence_penalty: 0.0,
         }),

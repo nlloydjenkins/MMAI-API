@@ -169,6 +169,9 @@ export interface PromptRequest {
   searchResults: any[];
   projectId?: string;
   systemPrompt?: string;
+  // Generation controls from frontend global settings
+  temperature?: number; // 0..1
+  topP?: number; // 0..1 (aka top_p)
 }
 
 export interface PromptResponse {

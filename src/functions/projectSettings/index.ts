@@ -44,6 +44,8 @@ interface ProjectSettingsEntity {
   cachedAdvice?: string; // JSON string of AdviceItem[]
   cachedAdvicePrompt?: string; // JSON string of {systemPrompt: string, userPrompt: string}
   cachedAdviceGeneratedAt?: Date;
+  // Advice history
+  adviceHistory?: string; // JSON string of AdviceHistoryEntry[]
   // Cached agenda data
   cachedAgendaContent?: string; // String content of actions and questions
   cachedAgendaPrompt?: string; // JSON string of {systemPrompt: string, userPrompt: string}
@@ -93,6 +95,8 @@ interface ProjectSettings {
   cachedAdvice?: string; // JSON string of AdviceItem[]
   cachedAdvicePrompt?: string; // JSON string of {systemPrompt: string, userPrompt: string}
   cachedAdviceGeneratedAt?: Date;
+  // Advice history
+  adviceHistory?: string; // JSON string of AdviceHistoryEntry[]
   // Cached agenda data
   cachedAgendaContent?: string; // String content of actions and questions
   cachedAgendaPrompt?: string; // JSON string of {systemPrompt: string, userPrompt: string}
@@ -212,6 +216,8 @@ async function getProjectSettings(
       cachedAdvice: entity.cachedAdvice,
       cachedAdvicePrompt: entity.cachedAdvicePrompt,
       cachedAdviceGeneratedAt: entity.cachedAdviceGeneratedAt,
+      // Advice history
+      adviceHistory: entity.adviceHistory,
       // Cached agenda data
       cachedAgendaContent: entity.cachedAgendaContent,
       cachedAgendaPrompt: entity.cachedAgendaPrompt,
@@ -345,6 +351,8 @@ async function saveProjectSettings(
       "cachedAdviceGeneratedAt",
       s.cachedAdviceGeneratedAt as any
     );
+    // Advice history
+    assignIfDefined("adviceHistory", s.adviceHistory);
     // Cached agenda data
     assignIfDefined("cachedAgendaContent", s.cachedAgendaContent);
     assignIfDefined("cachedAgendaPrompt", s.cachedAgendaPrompt);
