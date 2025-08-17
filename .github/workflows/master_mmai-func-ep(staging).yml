@@ -84,5 +84,7 @@ jobs:
         uses: Azure/functions-action@v1
         id: fa
         with:
-          app-name: "mmai-func-ep-staging"
+          app-name: "mmai-func-ep"
+          slot: "staging"
           package: "./deployment"
+
