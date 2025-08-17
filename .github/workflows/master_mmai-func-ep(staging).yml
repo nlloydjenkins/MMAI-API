@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy Node.js project to Azure Function App - mmai-func-ep
+name: Deploy API to Staging - mmai-func-ep-staging
 
 on:
   push:
@@ -10,17 +10,17 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
-  NODE_VERSION: '20.x' # set this to the node version to use (supports 8.x, 10.x, 12.x)
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: "." # set this to the path to your web app project, defaults to the repository root
+  NODE_VERSION: "20.x" # set this to the node version to use (supports 8.x, 10.x, 12.x)
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
       contents: read #This is required for actions/checkout
-      
+
     steps:
-      - name: 'Checkout GitHub Action'
+      - name: "Checkout GitHub Action"
         uses: actions/checkout@v4
 
       - name: Setup Node ${{ env.NODE_VERSION }} Environment
@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: 'Resolve Project Dependencies Using Npm'
+      - name: "Resolve Project Dependencies Using Npm"
         shell: pwsh
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
@@ -37,11 +37,23 @@ jobs:
           npm run test --if-present
           popd
 
+      - name: "Install production dependencies in dist folder"
+        shell: pwsh
+        run: |
+          pushd './dist'
+          npm install --production --omit=dev
+          popd
+
+      - name: "Create deployment package"
+        shell: pwsh
+        run: |
+          Compress-Archive -Path './dist/*' -DestinationPath './deployment-package.zip'
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: "./deployment-package.zip"
 
   deploy:
     runs-on: windows-latest
@@ -55,19 +67,22 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
-      
+
+      - name: "Extract deployment package"
+        shell: pwsh
+        run: |
+          Expand-Archive -Path './deployment-package.zip' -DestinationPath './deployment'
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_3A1A28D92C864EF9856A37DF9F9BFA52 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_B3D5A676B30D4A2186D1C267067C0F97 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_18513F64C1234B899F87051D345FBE7F }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_AF1909B9A5364AFCA330F1FB6C3C6FD2 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_57015D652AF845F6A09597A232CD2EDE }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_07516E7C8A094B658B1BFA5FE9CE56D6 }}
 
-      - name: 'Run Azure Functions Action'
+      - name: "Run Azure Functions Action"
         uses: Azure/functions-action@v1
         id: fa
         with:
-          app-name: 'mmai-func-ep'
-          slot-name: 'staging'
-          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          
+          app-name: "mmai-func-ep-staging"
+          package: "./deployment"
