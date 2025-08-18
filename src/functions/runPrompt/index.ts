@@ -11,102 +11,7 @@ import {
 } from "../../shared/utils";
 import { PromptRequest, PromptResponse } from "../../shared/types";
 import { AzureClients } from "../../shared/azure-config";
-import { searchWithProjectFilter } from "../../shared/project-search-utils";
-
-interface SearchResult {
-  id: string;
-  content: string;
-  fileName: string;
-  score: number;
-  highlights?: string[];
-}
-
-// Internal function to search for relevant documents
-async function searchRelevantDocuments(
-  query: string,
-  projectId?: string,
-  context?: InvocationContext
-): Promise<SearchResult[]> {
-  try {
-    const azureClients = AzureClients.getInstance();
-    const searchClient = azureClients.getSearchClient();
-
-    const searchOptions: any = {
-      top: 5, // Limit to top 5 most relevant documents
-      includeTotalCount: true,
-      searchFields: ["content", "fileName", "chunk"],
-      select: [
-        "id",
-        "content",
-        "fileName",
-        "projectId",
-        "project_id",
-        "chunk",
-        "metadata_storage_name",
-        "metadata_storage_path",
-      ],
-      highlight: "content,chunk",
-      queryType: "simple" as const,
-    };
-
-    context?.log(
-      "🔍 [PROMPT SEARCH DEBUG] Searching for relevant documents with query:",
-      query
-    );
-    context?.log("🔍 [PROMPT SEARCH DEBUG] ProjectId:", projectId);
-
-    // Use the smart project filtering utility
-    const searchResults = await searchWithProjectFilter(
-      searchClient,
-      query,
-      projectId || null,
-      searchOptions,
-      context
-    );
-
-    const results: SearchResult[] = [];
-    for await (const result of searchResults.results) {
-      const doc = result.document;
-      results.push({
-        id: doc.id || doc.key || "unknown",
-        content:
-          doc.content ||
-          doc.chunk ||
-          doc.text ||
-          JSON.stringify(doc).substring(0, 500),
-        fileName:
-          doc.fileName || doc.metadata_storage_name || doc.name || "unknown",
-        score: result.score || 0,
-        highlights:
-          result.highlights?.content || result.highlights?.chunk || [],
-      });
-    }
-
-    context?.log(
-      `🔍 [PROMPT SEARCH DEBUG] Found ${results.length} relevant documents`
-    );
-
-    // Log search results for debugging
-    if (results.length > 0) {
-      context?.log(
-        "🔍 [PROMPT SEARCH DEBUG] Sample search results:",
-        results.slice(0, 2).map((r) => ({
-          fileName: r.fileName,
-          score: r.score,
-          contentPreview: r.content.substring(0, 100) + "...",
-        }))
-      );
-    } else {
-      context?.log(
-        "🔍 [PROMPT SEARCH DEBUG] No documents found - checking if this is expected"
-      );
-    }
-    return results;
-  } catch (error) {
-    context?.log("Error searching documents:", error);
-    return []; // Return empty array if search fails, don't break the prompt flow
-  }
-}
+// Pre-search removed: rely on Chat Completions data_sources for retrieval
 
 export async function runPrompt(
   request: HttpRequest,
@@ -146,49 +51,8 @@ export async function runPrompt(
     const azureClients = AzureClients.getInstance();
     const config = azureClients.getConfig();
 
-    // Search for relevant documents using AI Search
-    context.log("Searching for relevant documents...");
-    const searchResults = await searchRelevantDocuments(
-      requestData.question,
-      requestData.projectId,
-      context
-    );
-
-    // Construct the prompt with search results context
+    // Construct the prompt without pre-search; retrieval comes from data_sources
     let contextualPrompt = requestData.question;
-
-    if (searchResults.length > 0) {
-      const searchContext = searchResults
-        .map((result, index) => {
-          const highlightText =
-            result.highlights && result.highlights.length > 0
-              ? result.highlights.join("...")
-              : result.content.substring(0, 500) + "...";
-
-          return `**Document ${index + 1}: ${
-            result.fileName
-          }** (Relevance: ${result.score.toFixed(2)})
-${highlightText}`;
-        })
-        .join("\n\n");
-
-      contextualPrompt = `Based on the following relevant documents from your knowledge base:
-
-${searchContext}
-
----
-
-Question: ${requestData.question}
-
-Please provide a comprehensive answer based on the information in the documents above. If the documents don't contain sufficient information to answer the question, please indicate what additional information might be needed.`;
-    } else {
-      context.log(
-        "No relevant documents found, proceeding with general knowledge"
-      );
-      contextualPrompt = `${requestData.question}
-
-Note: No specific documents were found in your knowledge base related to this question. This response is based on general knowledge.`;
-    }
 
     // Also include any additional search results passed in the request (for backward compatibility)
     if (requestData.searchResults && requestData.searchResults.length > 0) {
@@ -242,9 +106,31 @@ Note: No specific documents were found in your knowledge base related to this qu
             },
           ],
           model: config.openai.deployment,
-          // Note: Azure OpenAI Chat Completions supports both max_tokens and max_completion_tokens in some API versions.
-          // Keep the existing field but can be adjusted if needed.
-          max_completion_tokens: 1500,
+          // Configure Azure Search as a retrieval data source (On Your Data)
+          // Include semantic_configuration when using query_type: "semantic" to avoid 400 errors from Azure Search.
+          data_sources: [
+            {
+              type: "azure_search",
+              parameters: {
+                endpoint: config.search.endpoint,
+                index_name: config.search.indexName,
+                // Use semantic query with explicit configuration
+                query_type: "semantic",
+                semantic_configuration: "default",
+                filter: requestData.projectId
+                  ? `project_id eq '${requestData.projectId}'`
+                  : undefined,
+                strictness: 3,
+                top_n_documents: 5,
+                authentication: {
+                  type: "api_key",
+                  key: config.search.apiKey,
+                },
+              },
+            },
+          ],
+          // Use max_tokens for the preview API to avoid validation errors
+          max_tokens: 1500,
           temperature,
           top_p: topP,
           frequency_penalty: 0.0,
@@ -279,13 +165,49 @@ Note: No specific documents were found in your knowledge base related to this qu
       const openaiResponse = (await response.json()) as any;
       context.log("OpenAI response:", openaiResponse);
 
-      const generatedText =
-        openaiResponse.choices[0]?.message?.content || "No response generated";
+      const message = openaiResponse.choices?.[0]?.message ?? {};
+      const generatedText = message?.content || "No response generated";
       const tokensUsed = openaiResponse.usage?.total_tokens || 0;
 
+      // Try to extract citations (titles + URLs) from the response context if present
+      const contextBlock: any = message?.context || openaiResponse?.context;
+      let citationItems: Array<{ title?: string; url: string }> = [];
+      try {
+        const rawCitations: any[] = Array.isArray(contextBlock?.citations)
+          ? contextBlock.citations
+          : [];
+        const items: Array<{ title?: string; url: string }> = [];
+        for (const c of rawCitations) {
+          const url = c?.url || c?.uri || c?.source?.url || c?.source?.uri;
+          if (typeof url === "string" && url.trim().length > 0) {
+            const titleVal = c?.title || c?.source?.title || c?.name;
+            const title =
+              typeof titleVal === "string" && titleVal.trim().length > 0
+                ? titleVal
+                : undefined;
+            items.push({ url, title });
+          }
+        }
+        // De-duplicate by URL while preserving order
+        const seen = new Set<string>();
+        citationItems = items.filter((it) => {
+          if (seen.has(it.url)) return false;
+          seen.add(it.url);
+          return true;
+        });
+      } catch {}
+
+      let finalText = generatedText;
+      if (citationItems.length > 0) {
+        const sourcesList = citationItems
+          .map((it) => (it.title ? `- ${it.title} — ${it.url}` : `- ${it.url}`))
+          .join("\n");
+        finalText = `${generatedText}\n\nSources:\n${sourcesList}`;
+      }
+
       const result: PromptResponse = {
-        response: generatedText,
-        tokensUsed: tokensUsed,
+        response: finalText,
+        tokensUsed,
       };
 
       return createSuccessResponse(result);

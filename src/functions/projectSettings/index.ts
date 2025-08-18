@@ -369,7 +369,67 @@ async function saveProjectSettings(
     assignIfDefined("cachedQuestionsGeneratedAt", s.cachedQuestionsGeneratedAt);
     // AdHoc panels data
     assignIfDefined("adHocPanels", s.adHocPanels);
-    assignIfDefined("adHocPanelsContent", s.adHocPanelsContent);
+
+    // Special handling for adHocPanelsContent with size validation
+    if (s.adHocPanelsContent !== undefined) {
+      try {
+        // Validate it's valid JSON
+        JSON.parse(s.adHocPanelsContent);
+
+        // Azure Table Storage has a 64KB (32K character) limit per property
+        const maxSize = 30000; // 30K characters to be safe
+        if (s.adHocPanelsContent.length > maxSize) {
+          context.log(
+            `Warning: adHocPanelsContent is too large (${s.adHocPanelsContent.length} chars), truncating to ${maxSize}`
+          );
+
+          // Try to parse and aggressively truncate
+          try {
+            const panels = JSON.parse(s.adHocPanelsContent);
+            // Keep only the most recent 2 panels
+            const truncatedPanels = panels.slice(-2);
+            // Further truncate each panel's content
+            truncatedPanels.forEach((panel: any) => {
+              if (panel.queryResponses) {
+                panel.queryResponses = panel.queryResponses.slice(-2); // Only 2 conversations
+                panel.queryResponses.forEach((qr: any) => {
+                  if (qr.response) qr.response = qr.response.substring(0, 500);
+                  if (qr.prompt) qr.prompt = qr.prompt.substring(0, 100);
+                });
+              }
+              if (panel.adHocResults) {
+                panel.adHocResults = panel.adHocResults.substring(0, 500);
+              }
+            });
+
+            const truncatedSerialized = JSON.stringify(truncatedPanels);
+            if (truncatedSerialized.length <= maxSize) {
+              partialEntity.adHocPanelsContent = truncatedSerialized;
+            } else {
+              // If still too large, just save empty panels
+              context.log(
+                "Warning: Could not truncate adHocPanelsContent enough, saving empty array"
+              );
+              partialEntity.adHocPanelsContent = "[]";
+            }
+          } catch (truncateError) {
+            context.log(
+              "Warning: Could not truncate adHocPanelsContent, saving empty array:",
+              truncateError
+            );
+            partialEntity.adHocPanelsContent = "[]";
+          }
+        } else {
+          partialEntity.adHocPanelsContent = s.adHocPanelsContent;
+        }
+      } catch (jsonError) {
+        context.log(
+          "Warning: Invalid JSON in adHocPanelsContent, skipping:",
+          jsonError
+        );
+        // Don't save invalid JSON
+      }
+    }
 
     // Try to see if entity exists to set createdAt only when inserting
     try {
@@ -389,6 +449,19 @@ async function saveProjectSettings(
     return createSuccessResponse({ message: "Settings saved successfully" });
   } catch (error) {
     context.log("Error saving project settings:", error);
+
+    // Log more details about the error for debugging
+    if (error instanceof Error) {
+      context.log("Error name:", error.name);
+      context.log("Error message:", error.message);
+      context.log("Error stack:", error.stack);
+    }
+
+    // Check if it's a table storage specific error
+    if ((error as any)?.statusCode) {
+      context.log("HTTP status code:", (error as any).statusCode);
+    }
+
     return createErrorResponse(
       500,
       "INTERNAL_ERROR",
