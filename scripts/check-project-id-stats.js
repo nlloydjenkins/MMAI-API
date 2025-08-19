@@ -9,9 +9,13 @@
     node scripts/check-project-id-stats.js
 */
 
-const fs = require("fs");
-const path = require("path");
-const { SearchClient, AzureKeyCredential } = require("@azure/search-documents");
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { SearchClient, AzureKeyCredential } from "@azure/search-documents";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function readLocalSettings() {
   try {
@@ -32,7 +36,7 @@ function getSearchConfig() {
   const indexName =
     process.env.AZURE_SEARCH_INDEX_NAME ||
     values.AZURE_SEARCH_INDEX_NAME ||
-    "documents-index";
+    "documents-index-v2";
   if (!endpoint || !apiKey) {
     throw new Error(
       "Missing AZURE_SEARCH_ENDPOINT or AZURE_SEARCH_API_KEY. Set them in local.settings.json or env."
@@ -60,20 +64,44 @@ async function main() {
 
   const results = await client.search("*", {
     includeTotalCount: true,
-    top: 1000, // SDK will auto-paginate; we'll iterate over results
+    top: 50, // Process in batches to avoid memory issues
   });
 
   let total = 0;
   let withProjectId = 0;
   let withoutProjectId = 0;
   const samples = [];
+  const projectIdSamples = new Set(); // Track unique project IDs
+  const detailedSamples = []; // Store filename + project_id pairs
+
+  console.log("📊 Processing documents...");
 
   for await (const result of results.results) {
     const doc = result.document || {};
     total++;
+
+    if (total % 100 === 0) {
+      console.log(`  Processed ${total} documents...`);
+    }
+
     if (hasProjectId(doc)) {
       withProjectId++;
+      // Collect sample project IDs
+      const pid = doc.project_id ?? doc.projectId ?? doc.project;
+      if (projectIdSamples.size < 20) {
+        projectIdSamples.add(String(pid));
+      }
+      // Collect detailed samples (filename + project_id)
+      if (detailedSamples.length < 50) {
+        detailedSamples.push({
+          filename:
+            doc.metadata_storage_name || doc.fileName || doc.id || "unknown",
+          projectId: String(pid),
+          id: doc.id,
+        });
+      }
     } else {
+      withoutProjectId++;
       if (samples.length < 10) {
         samples.push({
           id: doc.id,
@@ -81,18 +109,38 @@ async function main() {
           path: doc.metadata_storage_path,
         });
       }
-      withoutProjectId++;
     }
   }
 
   console.log("\n===== Project ID Summary =====");
   console.log("Total documents:", results.count ?? total);
+  console.log("Total processed:", total);
   console.log("With project id:", withProjectId);
   console.log("Without project id:", withoutProjectId);
+  console.log(
+    "Math check:",
+    withProjectId + withoutProjectId,
+    "should equal",
+    total
+  );
   if (samples.length) {
     console.log("\nSample without project id (up to 10):");
     samples.forEach((s, i) =>
       console.log(`${i + 1}. ${s.id}  ${s.name || "(no name)"}`)
+    );
+  }
+
+  if (projectIdSamples.size > 0) {
+    console.log("\nSample project IDs found (up to 20):");
+    Array.from(projectIdSamples).forEach((pid, i) =>
+      console.log(`${i + 1}. "${pid}"`)
+    );
+  }
+
+  if (detailedSamples.length > 0) {
+    console.log("\nDetailed samples - Filename + Project ID (up to 50):");
+    detailedSamples.forEach((sample, i) =>
+      console.log(`${i + 1}. ${sample.filename} -> ${sample.projectId}`)
     );
   }
 }

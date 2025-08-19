@@ -67,7 +67,7 @@ export const getAzureConfig = (): AzureConfig => {
         process.env.AZURE_SEARCH_ENDPOINT ||
         "https://aisearchmmai.search.windows.net",
       apiKey: process.env.AZURE_SEARCH_API_KEY || "",
-      indexName: process.env.AZURE_SEARCH_INDEX_NAME || "documents-index",
+      indexName: process.env.AZURE_SEARCH_INDEX_NAME || "documents-index-v2",
     },
     openai: {
       endpoint:

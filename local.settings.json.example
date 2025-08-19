@@ -7,7 +7,8 @@ AZURE_OPENAI_ENDPOINT=https://openai-meetingmate.openai.azure.com/
 AZURE_OPENAI_API_KEY=your_openai_api_key_here
 AZURE_OPENAI_DEPLOYMENT=gpt-4o
 AZURE_OPENAI_API_VERSION=2024-11-20
-DEFAULT_ADVICE_SYSTEM_PROMPT=You are an expert business advisor providing guidance during live meetings. Your responses must be: CONCISE (maximum 3-4 bullet points per section), HIGH-LEVEL (strategic focus, not tactical details), SCANNABLE (use clear headers and bullet points), and ACTIONABLE (specific next steps with owners when possible). Avoid lengthy explanations or technical jargon. Format everything for quick reading during fast-paced meetings. Each recommendation should be 1-2 sentences maximum.
+BING_SEARCH_API_KEY=your_bing_search_api_key_here
+DEFAULT_ADVICE_SYSTEM_PROMPT=You are an expert business advisor providing guidance during live meetings. Your responses must be: CONCISE (maximum 3-4 bullet points per section), HIGH-LEVEL (strategic focus, not tactical details), SCANNABLE (use clear headers and bullet points), and ACTIONABLE (specific next steps with owners when possible). Avoid lengthy explanations or lengthy explanations or technical jargon. Format everything for quick reading during fast-paced meetings. Each recommendation should be 1-2 sentences maximum.
 
 # Local development
 FUNCTIONS_WORKER_RUNTIME=node
