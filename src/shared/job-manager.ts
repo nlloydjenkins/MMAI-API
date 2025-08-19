@@ -1,8 +1,8 @@
-import { TableServiceClient, TableClient, odata } from '@azure/data-tables';
-import { AzureClients } from './azure-config.js';
-import { DefaultAzureCredential } from '@azure/identity';
-import { ProcessingJob, DocumentStatus } from '../types/document-processing.js';
-import { v4 as uuidv4 } from 'uuid';
+import { TableServiceClient, TableClient, odata } from "@azure/data-tables";
+import { AzureClients } from "./azure-config.js";
+import { DefaultAzureCredential } from "@azure/identity";
+import { ProcessingJob, DocumentStatus } from "../types/document-processing.js";
+import { v4 as uuidv4 } from "uuid";
 
 export class JobManager {
   private tableClient: TableClient;
@@ -12,15 +12,15 @@ export class JobManager {
     // since AzureClients doesn't have this table configured yet
     const azureClients = AzureClients.getInstance();
     const config = azureClients.getConfig();
-    
+
     if (!config.storage.accountName) {
-      throw new Error('Azure Storage Account Name not configured');
+      throw new Error("Azure Storage Account Name not configured");
     }
-    
+
     const credential = new DefaultAzureCredential();
     this.tableClient = new TableClient(
       `https://${config.storage.accountName}.table.core.windows.net`,
-      'processingJobs',
+      "processingJobs",
       credential
     );
   }
@@ -31,7 +31,7 @@ export class JobManager {
     } catch (error: any) {
       // Table might already exist
       if (error.statusCode !== 409) {
-        console.error('Failed to initialize jobs table:', error);
+        console.error("Failed to initialize jobs table:", error);
         throw error;
       }
     }
@@ -40,7 +40,7 @@ export class JobManager {
   async createJob(
     userId: string,
     projectId: string,
-    inputType: 'file' | 'url' | 'folder',
+    inputType: "file" | "url" | "folder",
     inputSource: string,
     fileName?: string,
     fileSize?: number,
@@ -50,7 +50,7 @@ export class JobManager {
     const now = new Date();
 
     const job: ProcessingJob = {
-      partitionKey: 'job',
+      partitionKey: "job",
       rowKey: jobId,
       userId,
       projectId,
@@ -59,10 +59,10 @@ export class JobManager {
       fileName,
       fileSize,
       mimeType,
-      status: 'queued',
+      status: "queued",
       progress: 0,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
 
     await this.tableClient.createEntity(job);
@@ -71,8 +71,19 @@ export class JobManager {
 
   async getJob(jobId: string): Promise<ProcessingJob | null> {
     try {
-      const entity = await this.tableClient.getEntity<ProcessingJob>('job', jobId);
-      return entity;
+      const entity = await this.tableClient.getEntity<any>("job", jobId);
+
+      // Deserialize results if it exists and is a string
+      if (entity.results && typeof entity.results === "string") {
+        try {
+          entity.results = JSON.parse(entity.results);
+        } catch (e) {
+          console.warn("Failed to parse results JSON:", e);
+          entity.results = undefined;
+        }
+      }
+
+      return entity as ProcessingJob;
     } catch (error: any) {
       if (error.statusCode === 404) {
         return null;
@@ -86,13 +97,13 @@ export class JobManager {
     status: DocumentStatus,
     progress?: number,
     errorMessage?: string,
-    results?: ProcessingJob['results']
+    results?: ProcessingJob["results"]
   ): Promise<void> {
     const updateData = {
-      partitionKey: 'job',
+      partitionKey: "job",
       rowKey: jobId,
       status,
-      updatedAt: new Date()
+      updatedAt: new Date(),
     } as any;
 
     if (progress !== undefined) {
@@ -104,10 +115,10 @@ export class JobManager {
     }
 
     if (results !== undefined) {
-      updateData.results = results;
+      updateData.results = JSON.stringify(results);
     }
 
-    await this.tableClient.updateEntity(updateData, 'Merge');
+    await this.tableClient.updateEntity(updateData, "Merge");
   }
 
   async getUserJobs(
@@ -117,7 +128,7 @@ export class JobManager {
     continuationToken?: string
   ): Promise<{ jobs: ProcessingJob[]; continuationToken?: string }> {
     let filter = odata`PartitionKey eq 'job' and userId eq ${userId}`;
-    
+
     if (projectId) {
       filter = odata`PartitionKey eq 'job' and userId eq ${userId} and projectId eq ${projectId}`;
     }
@@ -125,10 +136,23 @@ export class JobManager {
     const entities = this.tableClient.listEntities<ProcessingJob>({
       queryOptions: {
         filter,
-        select: ['rowKey', 'userId', 'projectId', 'inputType', 'inputSource', 'fileName', 
-                'fileSize', 'mimeType', 'status', 'progress', 'createdAt', 'updatedAt', 
-                'errorMessage', 'results']
-      }
+        select: [
+          "rowKey",
+          "userId",
+          "projectId",
+          "inputType",
+          "inputSource",
+          "fileName",
+          "fileSize",
+          "mimeType",
+          "status",
+          "progress",
+          "createdAt",
+          "updatedAt",
+          "errorMessage",
+          "results",
+        ],
+      },
     });
 
     const jobs: ProcessingJob[] = [];
@@ -136,21 +160,38 @@ export class JobManager {
 
     for await (const entity of entities) {
       if (count >= limit) break;
+
+      // Deserialize results if it exists and is a string
+      if (entity.results && typeof entity.results === "string") {
+        try {
+          entity.results = JSON.parse(entity.results);
+        } catch (e) {
+          console.warn("Failed to parse results JSON:", e);
+          entity.results = undefined;
+        }
+      }
+
       jobs.push(entity);
       count++;
     }
 
     // Sort by creation date, newest first
-    jobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    jobs.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
     return { jobs };
   }
 
   async deleteJob(jobId: string): Promise<void> {
-    await this.tableClient.deleteEntity('job', jobId);
+    await this.tableClient.deleteEntity("job", jobId);
   }
 
-  async getJobStats(userId?: string, projectId?: string): Promise<{
+  async getJobStats(
+    userId?: string,
+    projectId?: string
+  ): Promise<{
     total: number;
     queued: number;
     processing: number;
@@ -158,13 +199,13 @@ export class JobManager {
     failed: number;
   }> {
     let filter = odata`PartitionKey eq 'job'`;
-    
+
     if (userId) {
       filter = odata`PartitionKey eq 'job' and userId eq ${userId}`;
     }
-    
+
     if (projectId) {
-      filter = userId 
+      filter = userId
         ? odata`PartitionKey eq 'job' and userId eq ${userId} and projectId eq ${projectId}`
         : odata`PartitionKey eq 'job' and projectId eq ${projectId}`;
     }
@@ -172,8 +213,8 @@ export class JobManager {
     const entities = this.tableClient.listEntities<ProcessingJob>({
       queryOptions: {
         filter,
-        select: ['status']
-      }
+        select: ["status"],
+      },
     });
 
     const stats = {
@@ -181,25 +222,25 @@ export class JobManager {
       queued: 0,
       processing: 0,
       completed: 0,
-      failed: 0
+      failed: 0,
     };
 
     for await (const entity of entities) {
       stats.total++;
-      
+
       switch (entity.status) {
-        case 'queued':
+        case "queued":
           stats.queued++;
           break;
-        case 'processing':
-        case 'chunking':
-        case 'indexing':
+        case "processing":
+        case "chunking":
+        case "indexing":
           stats.processing++;
           break;
-        case 'completed':
+        case "completed":
           stats.completed++;
           break;
-        case 'failed':
+        case "failed":
           stats.failed++;
           break;
       }
@@ -215,15 +256,18 @@ export class JobManager {
     const entities = this.tableClient.listEntities<ProcessingJob>({
       queryOptions: {
         filter: odata`PartitionKey eq 'job'`,
-        select: ['rowKey', 'createdAt', 'status']
-      }
+        select: ["rowKey", "createdAt", "status"],
+      },
     });
 
     const toDelete: string[] = [];
 
     for await (const entity of entities) {
       const createdAt = new Date(entity.createdAt);
-      if (createdAt < cutoffDate && (entity.status === 'completed' || entity.status === 'failed')) {
+      if (
+        createdAt < cutoffDate &&
+        (entity.status === "completed" || entity.status === "failed")
+      ) {
         toDelete.push(entity.rowKey);
       }
     }
