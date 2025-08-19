@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Deploy API to Staging - mmai-func-ep-staging
+name: Deploy API to Staging - mmai-func-ep/staging
 
 on:
   push:
@@ -87,4 +87,5 @@ jobs:
           app-name: "mmai-func-ep"
           slot: "staging"
           package: "./deployment"
+
 
