@@ -27,6 +27,8 @@ import "./functions/document-chunker";
 import "./functions/document-indexer";
 import "./functions/job-management";
 import "./functions/queue-management";
+import "./functions/url-processor";
+import "./functions/blob-storage";
 
 // Export a dummy function to ensure this module is processed
 export const initializeFunctions = () => {

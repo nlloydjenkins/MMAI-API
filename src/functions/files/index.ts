@@ -18,8 +18,8 @@ import {
   FileMetadata,
   ListFilesResponse,
   UploadTextRequest,
-  ProjectEntity,
   CreateProjectResponse,
+  ProjectEntity,
 } from "../../shared/types";
 
 export async function filesHandler(
@@ -121,6 +121,7 @@ async function listFiles(
     });
 
     const files: FileUploadResponse[] = [];
+
     for await (const entity of entities) {
       // For Azure Identity authentication, create proxy URLs for blob access
       const proxyUrl = `${
@@ -140,7 +141,7 @@ async function listFiles(
       });
     }
 
-    // Also get goals from project table
+    // Add goals from project table as individual virtual files
     try {
       const projectEntity = await projectTableClient.getEntity<ProjectEntity>(
         config.projects.partitionKey,
@@ -148,23 +149,41 @@ async function listFiles(
       );
 
       if (projectEntity.goals) {
-        // Add goal as a virtual file
-        files.push({
-          id: `goal-${projectId}`,
-          url: `project://${projectId}/goals`,
-          fileName: "goals.txt",
-          originalName: "Project Goals",
-          projectId,
-          fileType: "goal",
-          uploadedAt: projectEntity.createdAt,
-          size: Buffer.byteLength(projectEntity.goals, "utf8"),
-          content: projectEntity.goals,
+        // Split goals by separator and create individual goal entries
+        const goalTexts = projectEntity.goals
+          .split("\n\n---\n\n")
+          .filter((g: string) => g.trim());
+
+        goalTexts.forEach((goalText: string, index: number) => {
+          // Extract title and content from stored goal format
+          let title = `Goal ${index + 1}`;
+          let content = goalText;
+
+          // Check if goal has title metadata format: "TITLE: <title>\n<content>"
+          const titleMatch = goalText.match(/^TITLE: (.+)\n([\s\S]*)$/);
+          if (titleMatch) {
+            title = titleMatch[1];
+            content = titleMatch[2];
+          }
+
+          files.push({
+            id: `goal-${index}`, // Virtual ID for goals
+            url: `project://${projectId}/goals/${index}`, // Virtual URL
+            fileName: `goal_${index}.txt`,
+            originalName: title,
+            projectId,
+            fileType: "goal",
+            uploadedAt: projectEntity.createdAt || new Date().toISOString(),
+            size: Buffer.byteLength(content, "utf8"),
+            content: content, // Goal content without title metadata
+          });
         });
-        context.log(`📝 [API DEBUG] Added project goals to file list`);
       }
     } catch (error: any) {
-      context.log("⚠️ [API DEBUG] Could not fetch project goals:", error);
-      // Continue without goals if project doesn't exist or has no goals
+      if (error.statusCode !== 404) {
+        context.log(`⚠️ [API DEBUG] Could not load project goals:`, error);
+      }
+      // Continue without goals if project not found or other error
     }
 
     const response: ListFilesResponse = { files };
@@ -190,44 +209,7 @@ async function getFileContent(
     const azureClients = AzureClients.getInstance();
     const blobClient = azureClients.getBlobClient();
     const tableClient = azureClients.getFilesTableClient();
-    const projectTableClient = azureClients.getTableClient();
     const config = azureClients.getConfig();
-
-    // Handle special goal file ID
-    if (fileId.startsWith("goal-")) {
-      context.log(`🎯 [API DEBUG] Handling goal file request`);
-      try {
-        const projectEntity = await projectTableClient.getEntity<ProjectEntity>(
-          config.projects.partitionKey,
-          projectId
-        );
-
-        if (!projectEntity.goals) {
-          return createErrorResponse(
-            404,
-            "NOT_FOUND",
-            "No goals found for this project"
-          );
-        }
-
-        return createSuccessResponse({
-          content: projectEntity.goals,
-          fileName: "goals.txt",
-          originalName: "Project Goals",
-          fileType: "goal",
-        });
-      } catch (error: any) {
-        context.log(`❌ [API DEBUG] Error fetching project goals:`, error);
-        if (error.statusCode === 404) {
-          return createErrorResponse(404, "NOT_FOUND", "Project not found");
-        }
-        return createErrorResponse(
-          500,
-          "INTERNAL_ERROR",
-          "Failed to fetch project goals"
-        );
-      }
-    }
 
     // Get file metadata from table storage
     context.log(`📄 [API DEBUG] Getting file metadata from table`);
@@ -544,12 +526,13 @@ async function handleTextUpload(
       );
     }
 
-    // Handle goals differently - store in project table instead of as files
+    // Handle goals specially - store in project table instead of blob storage
     if (body.fileType === "goal") {
-      context.log(`🎯 [API DEBUG] Handling goal - updating project table`);
-      return await handleGoalUpdate(request, context, projectId, body);
+      context.log(`🎯 [API DEBUG] Processing goal - storing in project table`);
+      return await handleGoalUpload(request, context, projectId, body);
     }
 
+    // Handle all file types including goals as regular file entries
     const fileId = uuidv4();
     const timestamp = new Date().toISOString();
     const fileName = `${body.fileType}_${timestamp
@@ -654,115 +637,6 @@ async function handleTextUpload(
       500,
       "INTERNAL_ERROR",
       `Text upload failed: ${error.message}`
-    );
-  }
-}
-
-async function handleGoalUpdate(
-  request: HttpRequest,
-  context: InvocationContext,
-  projectId: string,
-  body: UploadTextRequest
-): Promise<HttpResponseInit> {
-  context.log(
-    `🎯 [API DEBUG] handleGoalUpdate started for project: ${projectId}`
-  );
-
-  try {
-    // Get Azure clients for project table
-    const azureClients = AzureClients.getInstance();
-    const projectTableClient = azureClients.getTableClient();
-    const config = azureClients.getConfig();
-
-    // Get existing project
-    const existingProject = await projectTableClient.getEntity<ProjectEntity>(
-      config.projects.partitionKey,
-      projectId
-    );
-
-    // Update the project with goal content
-    const updatedProject: ProjectEntity = {
-      ...existingProject,
-      goals: body.content,
-    };
-
-    // Save updated project
-    await projectTableClient.updateEntity(updatedProject, "Merge");
-    context.log(`✅ [API DEBUG] Project goals updated successfully`);
-
-    // Return a response that matches FileUploadResponse format for compatibility
-    const response: FileUploadResponse = {
-      id: `goal-${projectId}`, // Special ID for goals
-      url: `project://${projectId}/goals`, // Special URL format
-      fileName: "goals.txt",
-      originalName: body.title || "Project Goals",
-      projectId,
-      fileType: "goal",
-      uploadedAt: new Date().toISOString(),
-      size: Buffer.byteLength(body.content, "utf8"),
-      content: body.content,
-    };
-
-    context.log(`✅ [API DEBUG] Goal update completed:`, response);
-    return createSuccessResponse(response, 201);
-  } catch (error: any) {
-    context.log("❌ [API DEBUG] Error updating project goals:", error);
-
-    if (error.statusCode === 404) {
-      return createErrorResponse(404, "NOT_FOUND", "Project not found");
-    }
-
-    return createErrorResponse(
-      500,
-      "INTERNAL_ERROR",
-      "Failed to update project goals"
-    );
-  }
-}
-
-async function handleGoalDeletion(
-  request: HttpRequest,
-  context: InvocationContext,
-  projectId: string
-): Promise<HttpResponseInit> {
-  context.log(
-    `🎯 [API DEBUG] handleGoalDeletion started for project: ${projectId}`
-  );
-
-  try {
-    // Get Azure clients for project table
-    const azureClients = AzureClients.getInstance();
-    const projectTableClient = azureClients.getTableClient();
-    const config = azureClients.getConfig();
-
-    // Get existing project
-    const existingProject = await projectTableClient.getEntity<ProjectEntity>(
-      config.projects.partitionKey,
-      projectId
-    );
-
-    // Update the project to remove goals
-    const updatedProject: ProjectEntity = {
-      ...existingProject,
-      goals: undefined, // Remove goals
-    };
-
-    // Save updated project
-    await projectTableClient.updateEntity(updatedProject, "Merge");
-    context.log(`✅ [API DEBUG] Project goals deleted successfully`);
-
-    return createSuccessResponse({ message: "Goals deleted successfully" });
-  } catch (error: any) {
-    context.log("❌ [API DEBUG] Error deleting project goals:", error);
-
-    if (error.statusCode === 404) {
-      return createErrorResponse(404, "NOT_FOUND", "Project not found");
-    }
-
-    return createErrorResponse(
-      500,
-      "INTERNAL_ERROR",
-      "Failed to delete project goals"
     );
   }
 }
@@ -975,12 +849,10 @@ async function deleteFile(
       );
     }
 
-    // Handle special goal file deletion
+    // Handle goal deletion (goals have virtual IDs like "goal-0", "goal-1", etc.)
     if (fileId.startsWith("goal-")) {
-      context.log(
-        `🎯 [API DEBUG] Handling goal deletion - updating project table`
-      );
-      return await handleGoalDeletion(request, context, projectId);
+      context.log(`🎯 [API DEBUG] Deleting goal with ID: ${fileId}`);
+      return await handleGoalDeletion(request, context, projectId, fileId);
     }
 
     const azureClients = AzureClients.getInstance();
@@ -1266,6 +1138,172 @@ async function parseMultipartDataWithBuffer(
       resolve({ success: false, error: `Unexpected error: ${error.message}` });
     }
   });
+}
+
+async function handleGoalUpload(
+  request: HttpRequest,
+  context: InvocationContext,
+  projectId: string,
+  body: UploadTextRequest
+): Promise<HttpResponseInit> {
+  try {
+    const azureClients = AzureClients.getInstance();
+    const projectTableClient = azureClients.getTableClient();
+    const config = azureClients.getConfig();
+
+    context.log(`🎯 [API DEBUG] Adding goal to project ${projectId}`);
+
+    // Get current project entity
+    let projectEntity: ProjectEntity;
+    try {
+      projectEntity = await projectTableClient.getEntity<ProjectEntity>(
+        config.projects.partitionKey,
+        projectId
+      );
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        context.log(`❌ [API DEBUG] Project ${projectId} not found`);
+        return createErrorResponse(
+          404,
+          "PROJECT_NOT_FOUND",
+          "Project not found"
+        );
+      }
+      throw error;
+    }
+
+    // Add new goal to existing goals with title metadata
+    const existingGoals = projectEntity.goals || "";
+    const goalTitle = body.title || "New Goal";
+    const goalWithTitle = `TITLE: ${goalTitle}\n${body.content}`;
+    const newGoals = existingGoals
+      ? `${existingGoals}\n\n---\n\n${goalWithTitle}`
+      : goalWithTitle;
+
+    // Update project with new goals
+    const updatedEntity = {
+      ...projectEntity,
+      goals: newGoals,
+    };
+
+    await projectTableClient.updateEntity(updatedEntity, "Replace");
+    context.log(`✅ [API DEBUG] Goal added to project successfully`);
+
+    // Create a virtual response similar to regular file uploads
+    const fileId = `goal-${Date.now()}`; // Virtual ID for the new goal
+    const timestamp = new Date().toISOString();
+
+    const response: FileUploadResponse = {
+      id: fileId,
+      url: `project://${projectId}/goals`, // Virtual URL
+      fileName: `goal_${timestamp.slice(0, 19).replace(/[:-]/g, "")}.txt`,
+      originalName: body.title || "New Goal",
+      projectId,
+      fileType: "goal",
+      uploadedAt: timestamp,
+      size: Buffer.byteLength(body.content, "utf8"),
+      content: body.content,
+    };
+
+    return createSuccessResponse(response, 201);
+  } catch (error: any) {
+    context.log(`❌ [API DEBUG] Error in handleGoalUpload:`, error);
+    return createErrorResponse(
+      500,
+      "INTERNAL_ERROR",
+      `Goal upload failed: ${error.message}`
+    );
+  }
+}
+
+async function handleGoalDeletion(
+  request: HttpRequest,
+  context: InvocationContext,
+  projectId: string,
+  fileId: string
+): Promise<HttpResponseInit> {
+  try {
+    const azureClients = AzureClients.getInstance();
+    const projectTableClient = azureClients.getTableClient();
+    const config = azureClients.getConfig();
+
+    context.log(
+      `🎯 [API DEBUG] Deleting goal ${fileId} from project ${projectId}`
+    );
+
+    // Extract goal index from fileId (e.g., "goal-0" -> 0)
+    const goalIndexMatch = fileId.match(/^goal-(\d+)$/);
+    if (!goalIndexMatch) {
+      context.log(`❌ [API DEBUG] Invalid goal ID format: ${fileId}`);
+      return createErrorResponse(
+        400,
+        "INVALID_GOAL_ID",
+        "Invalid goal ID format"
+      );
+    }
+
+    const goalIndex = parseInt(goalIndexMatch[1]);
+
+    // Get current project entity
+    let projectEntity: ProjectEntity;
+    try {
+      projectEntity = await projectTableClient.getEntity<ProjectEntity>(
+        config.projects.partitionKey,
+        projectId
+      );
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        context.log(`❌ [API DEBUG] Project ${projectId} not found`);
+        return createErrorResponse(
+          404,
+          "PROJECT_NOT_FOUND",
+          "Project not found"
+        );
+      }
+      throw error;
+    }
+
+    if (!projectEntity.goals) {
+      context.log(`❌ [API DEBUG] No goals found in project ${projectId}`);
+      return createErrorResponse(404, "GOAL_NOT_FOUND", "Goal not found");
+    }
+
+    // Split goals and remove the specified goal
+    const goalTexts = projectEntity.goals
+      .split("\n\n---\n\n")
+      .filter((g: string) => g.trim());
+
+    if (goalIndex < 0 || goalIndex >= goalTexts.length) {
+      context.log(
+        `❌ [API DEBUG] Goal index ${goalIndex} out of range (0-${
+          goalTexts.length - 1
+        })`
+      );
+      return createErrorResponse(404, "GOAL_NOT_FOUND", "Goal not found");
+    }
+
+    // Remove the goal at the specified index
+    goalTexts.splice(goalIndex, 1);
+
+    // Update project with remaining goals
+    const newGoals = goalTexts.length > 0 ? goalTexts.join("\n\n---\n\n") : "";
+    const updatedEntity = {
+      ...projectEntity,
+      goals: newGoals,
+    };
+
+    await projectTableClient.updateEntity(updatedEntity, "Replace");
+    context.log(`✅ [API DEBUG] Goal deleted from project successfully`);
+
+    return createSuccessResponse({ message: "Goal deleted successfully" });
+  } catch (error: any) {
+    context.log(`❌ [API DEBUG] Error in handleGoalDeletion:`, error);
+    return createErrorResponse(
+      500,
+      "INTERNAL_ERROR",
+      `Goal deletion failed: ${error.message}`
+    );
+  }
 }
 
 // Helper function to get content type from file extension
