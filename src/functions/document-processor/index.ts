@@ -1,144 +1,171 @@
-import { app, InvocationContext } from '@azure/functions';
-import { AzureClients } from '../../shared/azure-config.js';
-import { JobManager } from '../../shared/job-manager.js';
-import { DocumentQueueClient } from '../../shared/queue-client.js';
-import { DocumentConverter } from '../../shared/document-converter.js';
-import { ProcessingJobMessage, ChunkingJobMessage } from '../../types/document-processing.js';
-import { v4 as uuidv4 } from 'uuid';
+import { app, InvocationContext } from "@azure/functions";
+import { AzureClients } from "../../shared/azure-config.js";
+import { JobManager } from "../../shared/job-manager.js";
+import { DocumentQueueClient } from "../../shared/queue-client.js";
+import { DocumentConverter } from "../../shared/document-converter.js";
+import {
+  ProcessingJobMessage,
+  ChunkingJobMessage,
+} from "../../types/document-processing.js";
+import { v4 as uuidv4 } from "uuid";
 
 export async function documentProcessorHandler(
   queueItem: unknown,
   context: InvocationContext
 ): Promise<void> {
-  context.log('Document processor triggered');
+  context.log("Document processor triggered");
 
   try {
     // Parse queue message - Azure Functions runtime already decodes base64 for us
     let jobMessage: ProcessingJobMessage;
-    
-    if (typeof queueItem === 'string') {
+
+    if (typeof queueItem === "string") {
       // If it's a string, parse as JSON directly
       jobMessage = JSON.parse(queueItem);
     } else {
       // If it's already an object, use it directly
       jobMessage = queueItem as ProcessingJobMessage;
     }
-    
-    context.log(`Processing job ${jobMessage.jobId} for file ${jobMessage.fileName}`);
+
+    context.log(
+      `Processing job ${jobMessage.jobId} for file ${jobMessage.fileName}`
+    );
 
     const jobManager = new JobManager();
     const queueClient = new DocumentQueueClient();
-    
+
     // Update job status to processing
-    await jobManager.updateJobStatus(jobMessage.jobId, 'processing', 10);
-
-    // Download file from blob storage
-    const fileBuffer = await downloadFromBlob(jobMessage.inputSource);
-    
-    await jobManager.updateJobStatus(jobMessage.jobId, 'processing', 30);
-
-    // Detect document type and convert
-    const documentType = DocumentConverter.detectDocumentType(
-      jobMessage.fileName || 'unknown', 
-      jobMessage.mimeType
-    );
-
-    if (!documentType) {
-      throw new Error(`Unsupported document type: ${jobMessage.mimeType || 'unknown'}`);
-    }
+    await jobManager.updateJobStatus(jobMessage.jobId, "processing", 10);
 
     let conversionResult;
+    let documentType = "url"; // Default for URL processing
     const startTime = Date.now();
 
-    switch (documentType) {
-      case 'docx':
-        conversionResult = await DocumentConverter.convertWord(
-          fileBuffer, 
-          jobMessage.fileName || 'document.docx'
+    if (jobMessage.inputType === "url") {
+      // Handle URL processing
+      context.log(`Processing URL: ${jobMessage.inputSource}`);
+
+      // Extract depth and maxPages from repurposed fields
+      const depth = jobMessage.fileSize || 2;
+      const maxPages = jobMessage.mimeType?.includes("maxPages=")
+        ? parseInt(jobMessage.mimeType.split("maxPages=")[1]) || 10
+        : 10;
+
+      conversionResult = await DocumentConverter.convertUrl(
+        jobMessage.inputSource,
+        depth,
+        maxPages,
+        jobMessage.fileName || "url-content"
+      );
+    } else {
+      // Handle file processing (existing logic)
+      const fileBuffer = await downloadFromBlob(jobMessage.inputSource);
+
+      await jobManager.updateJobStatus(jobMessage.jobId, "processing", 30);
+
+      // Detect document type and convert
+      const detectedType = DocumentConverter.detectDocumentType(
+        jobMessage.fileName || "unknown",
+        jobMessage.mimeType
+      );
+
+      if (!detectedType) {
+        throw new Error(
+          `Unsupported document type: ${jobMessage.mimeType || "unknown"}`
         );
-        break;
-      case 'xlsx':
-        conversionResult = await DocumentConverter.convertExcel(
-          fileBuffer, 
-          jobMessage.fileName || 'spreadsheet.xlsx'
-        );
-        break;
-      case 'pptx':
-        conversionResult = await DocumentConverter.convertPowerPoint(
-          fileBuffer, 
-          jobMessage.fileName || 'presentation.pptx'
-        );
-        break;
-      case 'pdf':
-        conversionResult = await DocumentConverter.convertPDF(
-          fileBuffer, 
-          jobMessage.fileName || 'document.pdf'
-        );
-        break;
-      case 'txt':
-        conversionResult = await DocumentConverter.convertText(
-          fileBuffer, 
-          jobMessage.fileName || 'document.txt',
-          'txt'
-        );
-        break;
-      case 'md':
-        conversionResult = await DocumentConverter.convertText(
-          fileBuffer, 
-          jobMessage.fileName || 'document.md',
-          'md'
-        );
-        break;
-      default:
-        throw new Error(`Unsupported document type: ${documentType}`);
+      }
+
+      documentType = detectedType;
+
+      switch (documentType) {
+        case "docx":
+          conversionResult = await DocumentConverter.convertWord(
+            fileBuffer,
+            jobMessage.fileName || "document.docx"
+          );
+          break;
+        case "xlsx":
+          conversionResult = await DocumentConverter.convertExcel(
+            fileBuffer,
+            jobMessage.fileName || "spreadsheet.xlsx"
+          );
+          break;
+        case "pptx":
+          conversionResult = await DocumentConverter.convertPowerPoint(
+            fileBuffer,
+            jobMessage.fileName || "presentation.pptx"
+          );
+          break;
+        case "pdf":
+          conversionResult = await DocumentConverter.convertPDF(
+            fileBuffer,
+            jobMessage.fileName || "document.pdf"
+          );
+          break;
+        case "txt":
+          conversionResult = await DocumentConverter.convertText(
+            fileBuffer,
+            jobMessage.fileName || "document.txt",
+            "txt"
+          );
+          break;
+        case "md":
+          conversionResult = await DocumentConverter.convertText(
+            fileBuffer,
+            jobMessage.fileName || "document.md",
+            "md"
+          );
+          break;
+        default:
+          throw new Error(`Unsupported document type: ${documentType}`);
+      }
     }
 
-    await jobManager.updateJobStatus(jobMessage.jobId, 'processing', 70);
+    await jobManager.updateJobStatus(jobMessage.jobId, "processing", 70);
 
     // Upload markdown to blob storage
     const markdownBlobName = await uploadMarkdownToBlob(
       conversionResult.markdown,
       jobMessage.projectId,
-      jobMessage.fileName || 'document',
+      jobMessage.fileName || "document",
       documentType
     );
 
     const processingTime = Date.now() - startTime;
 
     // Update job status and send to chunking queue
-    await jobManager.updateJobStatus(jobMessage.jobId, 'processing', 90);
+    await jobManager.updateJobStatus(jobMessage.jobId, "processing", 90);
 
     const chunkingMessage: ChunkingJobMessage = {
       jobId: jobMessage.jobId,
       markdownFiles: [markdownBlobName],
-      projectId: jobMessage.projectId
+      projectId: jobMessage.projectId,
     };
 
     await queueClient.sendChunkingJob(chunkingMessage);
 
     // Update job with processing results
     await jobManager.updateJobStatus(
-      jobMessage.jobId, 
-      'chunking', 
-      100, 
+      jobMessage.jobId,
+      "chunking",
+      100,
       undefined,
       {
         markdownFiles: [markdownBlobName],
         chunkFiles: [],
         indexedDocuments: 0,
-        processingTimeMs: processingTime
+        processingTimeMs: processingTime,
       }
     );
 
     context.log(`Successfully processed job ${jobMessage.jobId}`);
-
   } catch (error) {
     context.log(`Processing failed:`, error);
-    
+
     // Extract job ID from message if possible
     let jobId: string | undefined;
     try {
-      const messageText = Buffer.from(queueItem as string, 'base64').toString();
+      const messageText = Buffer.from(queueItem as string, "base64").toString();
       const jobMessage: ProcessingJobMessage = JSON.parse(messageText);
       jobId = jobMessage.jobId;
     } catch {
@@ -149,9 +176,9 @@ export async function documentProcessorHandler(
       const jobManager = new JobManager();
       await jobManager.updateJobStatus(
         jobId,
-        'failed',
+        "failed",
         0,
-        error instanceof Error ? error.message : 'Unknown error'
+        error instanceof Error ? error.message : "Unknown error"
       );
     }
 
@@ -163,29 +190,29 @@ async function downloadFromBlob(blobName: string): Promise<Buffer> {
   const azureClients = AzureClients.getInstance();
   const blobServiceClient = azureClients.getBlobServiceClient();
 
-  const containerName = 'documents';
+  const containerName = "documents";
   const containerClient = blobServiceClient.getContainerClient(containerName);
   const blobClient = containerClient.getBlobClient(blobName);
 
   const downloadResponse = await blobClient.download();
-  
+
   if (!downloadResponse.readableStreamBody) {
-    throw new Error('Failed to download blob');
+    throw new Error("Failed to download blob");
   }
 
   const chunks: Uint8Array[] = [];
   const stream = downloadResponse.readableStreamBody as any;
-  
+
   return new Promise((resolve, reject) => {
-    stream.on('data', (chunk: Uint8Array) => {
+    stream.on("data", (chunk: Uint8Array) => {
       chunks.push(chunk);
     });
-    
-    stream.on('end', () => {
+
+    stream.on("end", () => {
       resolve(Buffer.concat(chunks));
     });
-    
-    stream.on('error', (error: Error) => {
+
+    stream.on("error", (error: Error) => {
       reject(error);
     });
   });
@@ -200,37 +227,37 @@ async function uploadMarkdownToBlob(
   const azureClients = AzureClients.getInstance();
   const blobServiceClient = azureClients.getBlobServiceClient();
 
-  const containerName = 'processed-documents';
+  const containerName = "processed-documents";
   const containerClient = blobServiceClient.getContainerClient(containerName);
-  
+
   // Ensure container exists
   await containerClient.createIfNotExists();
 
   // Create unique blob name for markdown
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const uniqueId = uuidv4().split('-')[0];
-  const baseName = originalFileName.replace(/\.[^.]+$/, ''); // Remove extension
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const uniqueId = uuidv4().split("-")[0];
+  const baseName = originalFileName.replace(/\.[^.]+$/, ""); // Remove extension
   const blobName = `${projectId}/markdown/${timestamp}-${uniqueId}-${baseName}.md`;
 
   const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-  
-  await blockBlobClient.upload(markdown, Buffer.byteLength(markdown, 'utf8'), {
+
+  await blockBlobClient.upload(markdown, Buffer.byteLength(markdown, "utf8"), {
     blobHTTPHeaders: {
-      blobContentType: 'text/markdown'
+      blobContentType: "text/markdown",
     },
     metadata: {
       originalFileName,
       projectId,
       documentType,
-      processedAt: new Date().toISOString()
-    }
+      processedAt: new Date().toISOString(),
+    },
   });
 
   return blobName;
 }
 
-app.storageQueue('document-processor', {
-  queueName: 'document-processing',
-  connection: 'AzureWebJobsStorage',
-  handler: documentProcessorHandler
+app.storageQueue("document-processor", {
+  queueName: "document-processing",
+  connection: "AzureWebJobsStorage",
+  handler: documentProcessorHandler,
 });

@@ -126,7 +126,8 @@ export async function runPrompt(
       return createErrorResponse(
         405,
         "METHOD_NOT_ALLOWED",
-        "Only POST method is allowed"
+        "Only POST method is allowed",
+        request
       );
     }
 
@@ -138,7 +139,8 @@ export async function runPrompt(
       return createErrorResponse(
         400,
         "VALIDATION_ERROR",
-        "Question is required"
+        "Question is required",
+        request
       );
     }
 
@@ -267,13 +269,13 @@ Note: No specific documents were found in your knowledge base related to this qu
             response: debugResponse.trim(),
             tokensUsed: 0,
           };
-          return createSuccessResponse(result);
+          return createSuccessResponse(result, 200, request);
         }
 
         const correlationId = context.invocationId || Date.now().toString();
         const safeMessage = `The AI service is temporarily unavailable. Please retry soon. (Ref: ${correlationId})`;
         const result: PromptResponse = { response: safeMessage, tokensUsed: 0 };
-        return createSuccessResponse(result);
+        return createSuccessResponse(result, 200, request);
       }
 
       const openaiResponse = (await response.json()) as any;
@@ -288,7 +290,7 @@ Note: No specific documents were found in your knowledge base related to this qu
         tokensUsed: tokensUsed,
       };
 
-      return createSuccessResponse(result);
+      return createSuccessResponse(result, 200, request);
     } catch (fetchError) {
       context.log(
         "Fetch error calling OpenAI (raw logged, suppressed to client)",
@@ -307,16 +309,21 @@ Note: No specific documents were found in your knowledge base related to this qu
           response: debugResponse.trim(),
           tokensUsed: 0,
         };
-        return createSuccessResponse(result);
+        return createSuccessResponse(result, 200, request);
       }
       const correlationId = context.invocationId || Date.now().toString();
       const safeMessage = `Could not reach AI service. Please retry. (Ref: ${correlationId})`;
       const result: PromptResponse = { response: safeMessage, tokensUsed: 0 };
-      return createSuccessResponse(result);
+      return createSuccessResponse(result, 200, request);
     }
   } catch (error) {
     context.log("Error running prompt:", error);
-    return createErrorResponse(500, "INTERNAL_ERROR", "Failed to run prompt");
+    return createErrorResponse(
+      500,
+      "INTERNAL_ERROR",
+      "Failed to run prompt",
+      request
+    );
   }
 }
 

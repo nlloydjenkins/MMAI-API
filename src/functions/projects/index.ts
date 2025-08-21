@@ -255,7 +255,12 @@ async function updateProject(
     // Update the project entity
     const updatedEntity: ProjectEntity = {
       ...existingEntity,
-      goals: body.goals !== undefined ? body.goals : existingEntity.goals,
+      goals:
+        body.goals !== undefined
+          ? existingEntity.goals
+            ? existingEntity.goals + "\n\n---\n\n" + body.goals
+            : body.goals
+          : existingEntity.goals,
       customerId:
         body.customerId !== undefined
           ? body.customerId
