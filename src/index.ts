@@ -20,6 +20,15 @@ import "./functions/checkProjectIds";
 import "./functions/get-roles";
 import "./functions/testProjectSearch";
 import "./functions/updateProjectIds";
+// Document processing functions
+import "./functions/document-upload";
+import "./functions/document-processor";
+import "./functions/document-chunker";
+import "./functions/document-indexer";
+import "./functions/job-management";
+import "./functions/queue-management";
+import "./functions/url-processor";
+import "./functions/blob-storage";
 
 // Export a dummy function to ensure this module is processed
 export const initializeFunctions = () => {

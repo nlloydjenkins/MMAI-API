@@ -8,12 +8,12 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-  "build": "npm run version:update && npm run build:compile && npm run build:copy",
+    "build": "npm run version:update && npm run build:compile && npm run build:copy",
     "build:compile": "tsc",
-  "build:copy": "npm run build:copy-host && npm run build:write-package && npm run build:copy-version",
-  "build:copy-host": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.copyFileSync('host.json','dist/host.json')\"",
-  "build:write-package": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.main='index.js';delete p.type;fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/package.json',JSON.stringify(p,null,2))\"",
-  "build:copy-version": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.copyFileSync('src/version.json','dist/version.json')\"",
+    "build:copy": "npm run build:copy-host && npm run build:write-package && npm run build:copy-version",
+    "build:copy-host": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.copyFileSync('host.json','dist/host.json')\"",
+    "build:write-package": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.main='index.js';delete p.type;fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/package.json',JSON.stringify(p,null,2))\"",
+    "build:copy-version": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.copyFileSync('src/version.json','dist/version.json')\"",
     "clean": "if exist dist rmdir /s /q dist",
     "clean:build": "npm run clean && npm run build",
     "watch": "tsc -w",
@@ -34,16 +34,23 @@
     "@azure/identity": "^4.0.0",
     "@azure/search-documents": "^12.0.0",
     "@azure/storage-blob": "^12.17.0",
+    "@azure/storage-queue": "^12.27.0",
     "@types/archiver": "^6.0.3",
     "archiver": "^7.0.1",
     "axios": "^1.7.0",
     "busboy": "^1.6.0",
+    "mammoth": "^1.10.0",
+    "mime-types": "^2.1.35",
     "openai": "^4.52.0",
-    "uuid": "^10.0.0"
+    "pdf-parse": "^1.1.1",
+    "uuid": "^10.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/busboy": "^1.5.4",
+    "@types/mime-types": "^2.1.4",
     "@types/node": "^20.14.0",
+    "@types/pdf-parse": "^1.1.4",
     "@types/uuid": "^10.0.0",
     "azure-functions-core-tools": "^4.0.5",
     "typescript": "^5.9.2"

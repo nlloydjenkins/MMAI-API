@@ -90,14 +90,15 @@ export async function checkProjectIds(
       `✅ [CHECK] Status: ${documentsWithProjectId} with project_id, ${documentsWithoutProjectId} without`
     );
 
-    return createSuccessResponse(response);
+    return createSuccessResponse(response, 200, request);
   } catch (error) {
     context.log("❌ [CHECK] Error checking project IDs:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return createErrorResponse(
       500,
       "CHECK_ERROR",
-      `Failed to check project IDs: ${errorMessage}`
+      `Failed to check project IDs: ${errorMessage}`,
+      request
     );
   }
 }
