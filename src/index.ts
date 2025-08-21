@@ -20,7 +20,7 @@ import "./functions/checkProjectIds";
 import "./functions/get-roles";
 import "./functions/testProjectSearch";
 import "./functions/updateProjectIds";
-// Document processing functions
+// Document processing functions - re-enabled now that service principal auth is configured
 import "./functions/document-upload";
 import "./functions/document-processor";
 import "./functions/document-chunker";

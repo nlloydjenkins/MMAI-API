@@ -1,7 +1,7 @@
 import { TableClient } from "@azure/data-tables";
 import { BlobServiceClient } from "@azure/storage-blob";
 import { SearchClient, AzureKeyCredential } from "@azure/search-documents";
-import { DefaultAzureCredential } from "@azure/identity";
+import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
 
 export interface AzureConfig {
   storage: {
@@ -148,6 +148,35 @@ export class AzureClients {
     return AzureClients.instance;
   }
 
+  private getCredential() {
+    // Check if we have service principal credentials explicitly set
+    const clientId = process.env.AZURE_CLIENT_ID;
+    const clientSecret = process.env.AZURE_CLIENT_SECRET;
+    const tenantId = process.env.AZURE_TENANT_ID;
+
+    if (clientId && clientSecret && tenantId) {
+      console.log("🔧 [CLIENTS DEBUG] Using ClientSecretCredential for service principal authentication");
+      console.log("🔧 [CLIENTS DEBUG] Client ID:", clientId);
+      console.log("🔧 [CLIENTS DEBUG] Tenant ID:", tenantId);
+      
+      // For private endpoints, we may need to configure the credential with specific options
+      const credential = new ClientSecretCredential(tenantId, clientId, clientSecret, {
+        // Disable instance metadata service for private endpoints
+        disableInstanceDiscovery: false,
+        // Use specific authority URL that works with private endpoints
+        authorityHost: "https://login.microsoftonline.com"
+      });
+      
+      return credential;
+    } else {
+      console.log("🔧 [CLIENTS DEBUG] Using DefaultAzureCredential for managed identity");
+      return new DefaultAzureCredential({
+        // Configure for private endpoint access
+        managedIdentityClientId: undefined
+      });
+    }
+  }
+
   public getTableClient(): TableClient {
     if (!this._projectsTableClient) {
       if (!this.config.storage.accountName) {
@@ -157,9 +186,9 @@ export class AzureClients {
       }
 
       console.log(
-        "🔧 [CLIENTS DEBUG] Creating table client with managed identity for Azure Functions"
+        "🔧 [CLIENTS DEBUG] Creating table client with authentication for Azure Functions"
       );
-      const credential = new DefaultAzureCredential();
+      const credential = this.getCredential();
       this._projectsTableClient = new TableClient(
         `https://${this.config.storage.accountName}.table.core.windows.net`,
         this.config.projects.tableName,
@@ -178,9 +207,9 @@ export class AzureClients {
       }
 
       console.log(
-        "🔧 [CLIENTS DEBUG] Creating files table client with managed identity for Azure Functions"
+        "🔧 [CLIENTS DEBUG] Creating files table client with authentication for Azure Functions"
       );
-      const credential = new DefaultAzureCredential();
+      const credential = this.getCredential();
       this._filesTableClient = new TableClient(
         `https://${this.config.storage.accountName}.table.core.windows.net`,
         this.config.files.tableName,
@@ -199,9 +228,9 @@ export class AzureClients {
       }
 
       console.log(
-        "🔧 [CLIENTS DEBUG] Creating BlobServiceClient with managed identity for Azure Functions"
+        "🔧 [CLIENTS DEBUG] Creating BlobServiceClient with authentication for Azure Functions"
       );
-      const credential = new DefaultAzureCredential();
+      const credential = this.getCredential();
       this._blobServiceClient = new BlobServiceClient(
         `https://${this.config.storage.accountName}.blob.core.windows.net`,
         credential
