@@ -64,6 +64,9 @@ export async function documentIndexerHandler(
       chunkFiles: job?.results?.chunkFiles || [],
       indexedDocuments: totalIndexedDocuments,
       processingTimeMs: job?.results?.processingTimeMs || 0,
+      ...(job?.results?.pagesCrawled && {
+        pagesCrawled: job.results.pagesCrawled,
+      }),
     };
 
     await jobManager.updateJobStatus(

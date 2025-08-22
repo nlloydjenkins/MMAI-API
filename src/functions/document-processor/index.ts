@@ -51,12 +51,24 @@ export async function documentProcessorHandler(
         ? parseInt(jobMessage.mimeType.split("maxPages=")[1]) || 10
         : 10;
 
+      context.log(
+        `Starting URL crawling with depth=${depth}, maxPages=${maxPages}`
+      );
+      await jobManager.updateJobStatus(jobMessage.jobId, "processing", 20);
+
       conversionResult = await DocumentConverter.convertUrl(
         jobMessage.inputSource,
         depth,
         maxPages,
         jobMessage.fileName || "url-content"
       );
+
+      context.log(
+        `URL conversion completed. Pages crawled: ${
+          conversionResult.pagesCrawled || 0
+        }`
+      );
+      await jobManager.updateJobStatus(jobMessage.jobId, "processing", 50);
     } else {
       // Handle file processing (existing logic)
       const fileBuffer = await downloadFromBlob(jobMessage.inputSource);
@@ -145,17 +157,24 @@ export async function documentProcessorHandler(
     await queueClient.sendChunkingJob(chunkingMessage);
 
     // Update job with processing results
+    const jobResults = {
+      markdownFiles: [markdownBlobName],
+      chunkFiles: [],
+      indexedDocuments: 0,
+      processingTimeMs: processingTime,
+    };
+
+    // Add pagesCrawled for URL processing
+    if (jobMessage.inputType === "url" && conversionResult.pagesCrawled) {
+      (jobResults as any).pagesCrawled = conversionResult.pagesCrawled;
+    }
+
     await jobManager.updateJobStatus(
       jobMessage.jobId,
       "chunking",
       100,
       undefined,
-      {
-        markdownFiles: [markdownBlobName],
-        chunkFiles: [],
-        indexedDocuments: 0,
-        processingTimeMs: processingTime,
-      }
+      jobResults
     );
 
     context.log(`Successfully processed job ${jobMessage.jobId}`);

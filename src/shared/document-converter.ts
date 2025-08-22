@@ -15,6 +15,7 @@ export interface DocumentMetadata {
 export interface ConversionResult {
   markdown: string;
   metadata: DocumentMetadata;
+  pagesCrawled?: number;
 }
 
 export class DocumentConverter {
@@ -339,45 +340,57 @@ modified: '${metadata.modified}'`
     fileName: string = "url-content"
   ): Promise<ConversionResult> {
     try {
-      // For now, implement a basic URL content extraction
-      // This would be replaced with the full crawling logic from URLtoPDF
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch URL: ${response.status} ${response.statusText}`
-        );
+      console.log(`[DocumentConverter] Starting URL conversion: ${url}`);
+      console.log(
+        `[DocumentConverter] Parameters - depth: ${depth}, maxPages: ${maxPages}, fileName: ${fileName}`
+      );
+
+      const startTime = Date.now();
+      console.log(`[DocumentConverter] Beginning website crawl...`);
+      const crawledPages = await this.crawlWebsite(url, depth, maxPages);
+      const processingTime = Date.now() - startTime;
+      console.log(
+        `[DocumentConverter] Crawling completed in ${processingTime}ms, found ${crawledPages.length} pages`
+      );
+
+      if (crawledPages.length === 0) {
+        console.error(`[DocumentConverter] No pages crawled from ${url}`);
+        throw new Error("No pages could be crawled from the provided URL");
       }
 
-      const html = await response.text();
+      // Combine all pages into a single markdown document
+      let markdown = "";
+      const crawlSummary = [];
 
-      // Basic HTML to markdown conversion (simplified)
-      let markdown = html
-        .replace(/<title[^>]*>([^<]*)<\/title>/i, "# $1\n\n")
-        .replace(
-          /<h([1-6])[^>]*>([^<]*)<\/h[1-6]>/gi,
-          (match, level, content) =>
-            "#".repeat(parseInt(level)) + " " + content.trim() + "\n\n"
-        )
-        .replace(/<p[^>]*>([^<]*)<\/p>/gi, "$1\n\n")
-        .replace(/<strong[^>]*>([^<]*)<\/strong>/gi, "**$1**")
-        .replace(/<em[^>]*>([^<]*)<\/em>/gi, "*$1*")
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<[^>]*>/g, "") // Remove all HTML tags
-        .replace(/\s+/g, " ") // Normalize whitespace
-        .replace(/\n\s*\n/g, "\n\n") // Normalize line breaks
-        .trim();
+      for (const page of crawledPages) {
+        // Add page header
+        markdown += `\n\n---\n\n# ${page.title}\n\n`;
+        markdown += `**URL:** ${page.url}\n\n`;
+        if (page.depth > 0) {
+          markdown += `**Depth:** ${page.depth}\n\n`;
+        }
 
-      if (!markdown || markdown.length < 100) {
-        markdown = `# ${fileName}\n\nContent from: ${url}\n\n[Content could not be extracted or is too short]`;
+        // Add page content
+        markdown += page.content + "\n\n";
+
+        crawlSummary.push({
+          url: page.url,
+          title: page.title,
+          depth: page.depth,
+          contentLength: page.content.length,
+        });
       }
 
-      // Add YAML front matter
+      // Add comprehensive front matter
       const frontMatter = `---
 source_url: ${url}
 title: "${fileName}"
 crawl_time: ${new Date().toISOString()}
 depth: ${depth}
 max_pages: ${maxPages}
+pages_crawled: ${crawledPages.length}
+processing_time_ms: ${processingTime}
+pages_summary: ${JSON.stringify(crawlSummary, null, 2)}
 ---
 
 `;
@@ -389,7 +402,7 @@ max_pages: ${maxPages}
         .filter((word: string) => word.length > 0).length;
 
       const metadata: DocumentMetadata = {
-        title: fileName,
+        title: `${fileName} (${crawledPages.length} pages)`,
         wordCount,
         documentType: "url",
         sourceFile: url,
@@ -399,6 +412,7 @@ max_pages: ${maxPages}
       return {
         markdown,
         metadata,
+        pagesCrawled: crawledPages.length,
       };
     } catch (error) {
       throw new Error(
@@ -407,5 +421,277 @@ max_pages: ${maxPages}
         }`
       );
     }
+  }
+
+  /**
+   * Crawl a website to specified depth and extract content from pages
+   */
+  private static async crawlWebsite(
+    startUrl: string,
+    maxDepth: number,
+    maxPages: number
+  ): Promise<
+    Array<{ url: string; title: string; content: string; depth: number }>
+  > {
+    console.log(
+      `[crawlWebsite] Starting crawl of ${startUrl} (maxDepth: ${maxDepth}, maxPages: ${maxPages})`
+    );
+
+    const visitedUrls = new Set<string>();
+    const crawledPages: Array<{
+      url: string;
+      title: string;
+      content: string;
+      depth: number;
+    }> = [];
+    const urlQueue: Array<{ url: string; depth: number }> = [
+      { url: startUrl, depth: 0 },
+    ];
+
+    // Get base domain to limit crawling to same domain
+    const baseDomain = new URL(startUrl).hostname;
+    console.log(`[crawlWebsite] Base domain: ${baseDomain}`);
+
+    while (urlQueue.length > 0 && crawledPages.length < maxPages) {
+      const { url, depth } = urlQueue.shift()!;
+      console.log(`[crawlWebsite] Processing URL: ${url} (depth: ${depth})`);
+
+      // Skip if already visited or depth exceeded
+      if (visitedUrls.has(url) || depth > maxDepth) {
+        console.log(
+          `[crawlWebsite] Skipping ${url} - already visited: ${visitedUrls.has(
+            url
+          )}, depth exceeded: ${depth > maxDepth}`
+        );
+        continue;
+      }
+
+      try {
+        visitedUrls.add(url);
+
+        // Add delay to be respectful to servers
+        if (crawledPages.length > 0) {
+          console.log(`[crawlWebsite] Adding 500ms delay before fetch...`);
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
+        console.log(`[crawlWebsite] Fetching page: ${url}`);
+        const pageContent = await this.fetchAndProcessPage(url);
+        if (pageContent) {
+          console.log(
+            `[crawlWebsite] Successfully processed page: ${url} (title: ${pageContent.title}, content length: ${pageContent.content.length})`
+          );
+          crawledPages.push({
+            url,
+            title: pageContent.title,
+            content: pageContent.content,
+            depth,
+          });
+
+          // If we haven't reached max depth, extract links for next level
+          if (depth < maxDepth && crawledPages.length < maxPages) {
+            const links = this.extractLinks(pageContent.html, url, baseDomain);
+            for (const link of links) {
+              if (
+                !visitedUrls.has(link) &&
+                urlQueue.length + crawledPages.length < maxPages
+              ) {
+                urlQueue.push({ url: link, depth: depth + 1 });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to crawl ${url}:`, error);
+        // Continue with other URLs even if one fails
+      }
+    }
+
+    return crawledPages;
+  }
+
+  /**
+   * Fetch and process a single page
+   */
+  private static async fetchAndProcessPage(
+    url: string
+  ): Promise<{ title: string; content: string; html: string } | null> {
+    try {
+      console.log(`[fetchAndProcessPage] Starting fetch for: ${url}`);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; MMAI-Crawler/1.0)",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        redirect: "follow",
+      });
+
+      console.log(
+        `[fetchAndProcessPage] Response status: ${response.status} ${response.statusText}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      console.log(`[fetchAndProcessPage] Content-Type: ${contentType}`);
+
+      if (!contentType.includes("text/html")) {
+        throw new Error(`Not an HTML page: ${contentType}`);
+      }
+
+      console.log(`[fetchAndProcessPage] Reading HTML content...`);
+      const html = await response.text();
+      console.log(`[fetchAndProcessPage] HTML content length: ${html.length}`);
+
+      const title = this.extractTitle(html) || new URL(url).pathname;
+      console.log(`[fetchAndProcessPage] Extracted title: ${title}`);
+
+      console.log(`[fetchAndProcessPage] Converting HTML to markdown...`);
+      const content = this.htmlToMarkdown(html);
+      console.log(
+        `[fetchAndProcessPage] Markdown content length: ${content.length}`
+      );
+
+      if (content.length < 50) {
+        console.log(
+          `[fetchAndProcessPage] Skipping page with minimal content: ${content.length} chars`
+        );
+        return null; // Skip pages with very little content
+      }
+
+      console.log(`[fetchAndProcessPage] Successfully processed page: ${url}`);
+      return { title, content, html };
+    } catch (error) {
+      console.warn(`[fetchAndProcessPage] Failed to fetch ${url}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract title from HTML
+   */
+  private static extractTitle(html: string): string {
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      return titleMatch[1].trim().replace(/\s+/g, " ");
+    }
+
+    // Fallback to h1
+    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    if (h1Match) {
+      return h1Match[1].trim().replace(/\s+/g, " ");
+    }
+
+    return "Untitled Page";
+  }
+
+  /**
+   * Convert HTML to markdown
+   */
+  private static htmlToMarkdown(html: string): string {
+    // Remove script and style tags completely
+    let markdown = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<!--[\s\S]*?-->/g, "");
+
+    // Convert headers
+    markdown = markdown.replace(
+      /<h([1-6])[^>]*>([^<]*)<\/h[1-6]>/gi,
+      (match, level, content) => {
+        const cleanContent = content.replace(/<[^>]*>/g, "").trim();
+        return "\n" + "#".repeat(parseInt(level)) + " " + cleanContent + "\n\n";
+      }
+    );
+
+    // Convert paragraphs and basic formatting
+    markdown = markdown
+      .replace(/<p[^>]*>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<strong[^>]*>([^<]*)<\/strong>/gi, "**$1**")
+      .replace(/<b[^>]*>([^<]*)<\/b>/gi, "**$1**")
+      .replace(/<em[^>]*>([^<]*)<\/em>/gi, "*$1*")
+      .replace(/<i[^>]*>([^<]*)<\/i>/gi, "*$1*")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<hr[^>]*>/gi, "\n---\n")
+      .replace(/<li[^>]*>/gi, "- ")
+      .replace(/<\/li>/gi, "\n")
+      .replace(/<ul[^>]*>/gi, "\n")
+      .replace(/<\/ul>/gi, "\n")
+      .replace(/<ol[^>]*>/gi, "\n")
+      .replace(/<\/ol>/gi, "\n");
+
+    // Convert links
+    markdown = markdown.replace(
+      /<a[^>]*href=['"]([^'"]*)['"][^>]*>([^<]*)<\/a>/gi,
+      "[$2]($1)"
+    );
+
+    // Remove all remaining HTML tags
+    markdown = markdown.replace(/<[^>]*>/g, "");
+
+    // Clean up whitespace
+    markdown = markdown
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\n\s*\n\s*\n/g, "\n\n") // Multiple newlines to double
+      .replace(/[ \t]+/g, " ") // Multiple spaces to single
+      .trim();
+
+    return markdown;
+  }
+
+  /**
+   * Extract links from HTML page
+   */
+  private static extractLinks(
+    html: string,
+    baseUrl: string,
+    baseDomain: string
+  ): string[] {
+    const links: string[] = [];
+    const linkRegex = /<a[^>]*href=['"]([^'"]*)['"][^>]*>/gi;
+    let match;
+
+    while ((match = linkRegex.exec(html)) !== null) {
+      try {
+        const href = match[1];
+
+        // Skip non-HTTP links
+        if (
+          href.startsWith("mailto:") ||
+          href.startsWith("tel:") ||
+          href.startsWith("javascript:")
+        ) {
+          continue;
+        }
+
+        // Resolve relative URLs
+        const absoluteUrl = new URL(href, baseUrl).href;
+        const linkDomain = new URL(absoluteUrl).hostname;
+
+        // Only include links from the same domain
+        if (linkDomain === baseDomain) {
+          // Remove fragments and normalize
+          const cleanUrl = absoluteUrl.split("#")[0];
+          if (!links.includes(cleanUrl)) {
+            links.push(cleanUrl);
+          }
+        }
+      } catch (error) {
+        // Skip invalid URLs
+        continue;
+      }
+    }
+
+    return links;
   }
 }
