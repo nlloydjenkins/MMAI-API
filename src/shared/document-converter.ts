@@ -1,6 +1,7 @@
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import pdfParse from "pdf-parse";
+import { AdvancedCrawler } from "./advanced-crawler";
 
 export interface DocumentMetadata {
   title?: string;
@@ -10,12 +11,21 @@ export interface DocumentMetadata {
   wordCount: number;
   documentType: string;
   sourceFile: string;
+  error?: string;
 }
 
 export interface ConversionResult {
   markdown: string;
   metadata: DocumentMetadata;
+  processingTimeMs?: number;
   pagesCrawled?: number;
+  crawlErrors?: Array<{
+    url: string;
+    error: string;
+    timestamp: string;
+  }>;
+  httpAttempts?: number;
+  browserFallbacks?: number;
 }
 
 export class DocumentConverter {
@@ -337,7 +347,12 @@ modified: '${metadata.modified}'`
     url: string,
     depth: number = 2,
     maxPages: number = 10,
-    fileName: string = "url-content"
+    fileName: string = "url-content",
+    progressCallback?: (
+      currentUrl: string,
+      pageCount: number,
+      maxPages: number
+    ) => Promise<void>
   ): Promise<ConversionResult> {
     try {
       console.log(`[DocumentConverter] Starting URL conversion: ${url}`);
@@ -346,26 +361,182 @@ modified: '${metadata.modified}'`
       );
 
       const startTime = Date.now();
-      console.log(`[DocumentConverter] Beginning website crawl...`);
-      const crawledPages = await this.crawlWebsite(url, depth, maxPages);
+      console.log(`[DocumentConverter] Starting advanced website crawl...`);
+      
+      // Enhanced progress callback with method information
+      const enhancedProgressCallback = async (currentUrl: string, pageCount: number, maxPages: number) => {
+        if (progressCallback) {
+          // Determine current method being used
+          const method = currentUrl.includes('browser-fallback') ? 'browser automation' : 'enhanced HTTP';
+          await progressCallback(currentUrl, pageCount, maxPages);
+        }
+      };
+      
+      const crawlResult = await AdvancedCrawler.crawlWebsite(url, {
+        maxDepth: depth,
+        maxPages,
+        progressCallback: enhancedProgressCallback
+      });
+      
       const processingTime = Date.now() - startTime;
       console.log(
-        `[DocumentConverter] Crawling completed in ${processingTime}ms, found ${crawledPages.length} pages`
+        `[DocumentConverter] Advanced crawling completed in ${processingTime}ms. Pages: ${crawlResult.pages.length}, Errors: ${crawlResult.errors.length}, HTTP attempts: ${crawlResult.httpAttempts}, Browser fallbacks: ${crawlResult.browserFallbacks}`
       );
 
-      if (crawledPages.length === 0) {
+      if (crawlResult.pages.length === 0) {
         console.error(`[DocumentConverter] No pages crawled from ${url}`);
-        throw new Error("No pages could be crawled from the provided URL");
+        
+        // Analyze the types of errors encountered
+        const botDetectionErrors = crawlResult.errors.filter(error => 
+          error.error.toLowerCase().includes('bot detection') || 
+          error.error.toLowerCase().includes('cloudflare') ||
+          error.error.toLowerCase().includes('captcha') ||
+          error.error.toLowerCase().includes('anti-bot')
+        );
+        
+        const accessErrors = crawlResult.errors.filter(error => 
+          error.error.includes('403') || 
+          error.error.includes('401') ||
+          error.error.toLowerCase().includes('forbidden') ||
+          error.error.toLowerCase().includes('unauthorized')
+        );
+        
+        const rateLimitErrors = crawlResult.errors.filter(error => 
+          error.error.includes('429') ||
+          error.error.toLowerCase().includes('rate limit') ||
+          error.error.toLowerCase().includes('too many requests')
+        );
+        
+        // Create detailed error summary
+        let errorSummary = "Failed to crawl any pages from the provided URL";
+        let errorDetails = [];
+        
+        if (botDetectionErrors.length > 0) {
+          errorSummary = "Website is using anti-bot protection that prevented crawling";
+          errorDetails.push(`${botDetectionErrors.length} page(s) blocked by bot detection`);
+          
+          if (crawlResult.browserFallbacks > 0) {
+            errorDetails.push(`Tried browser automation fallback but still blocked`);
+          }
+        }
+        
+        if (accessErrors.length > 0) {
+          errorDetails.push(`${accessErrors.length} page(s) returned access denied errors`);
+        }
+        
+        if (rateLimitErrors.length > 0) {
+          errorDetails.push(`${rateLimitErrors.length} page(s) failed due to rate limiting`);
+        }
+        
+        if (errorDetails.length === 0 && crawlResult.errors.length > 0) {
+          const errorTypes = [...new Set(crawlResult.errors.map(e => {
+            const match = e.error.match(/^[^:]+/);
+            return match ? match[0] : 'Unknown error';
+          }))];
+          errorSummary = `All pages failed to crawl`;
+          errorDetails.push(`Error types: ${errorTypes.join(', ')}`);
+        }
+        
+        // Add crawling method statistics
+        const methodStats = [];
+        if (crawlResult.httpAttempts > 0) {
+          methodStats.push(`${crawlResult.httpAttempts} HTTP attempt(s)`);
+        }
+        if (crawlResult.browserFallbacks > 0) {
+          methodStats.push(`${crawlResult.browserFallbacks} browser fallback(s)`);
+        }
+        
+        if (methodStats.length > 0) {
+          errorDetails.push(`Methods tried: ${methodStats.join(', ')}`);
+        }
+        
+        // Return a result with enhanced error information instead of throwing
+        const frontMatter = `---
+source_url: ${url}
+title: "${fileName}"
+crawl_time: ${new Date().toISOString()}
+depth: ${depth}
+max_pages: ${maxPages}
+pages_crawled: 0
+processing_time_ms: ${processingTime}
+http_attempts: ${crawlResult.httpAttempts}
+browser_fallbacks: ${crawlResult.browserFallbacks}
+error_summary: "${errorSummary}"
+error_details: ${JSON.stringify(errorDetails)}
+crawl_errors: ${JSON.stringify(crawlResult.errors, null, 2)}
+---
+
+# Failed to Process Website
+
+**URL:** ${url}
+**Error:** ${errorSummary}
+
+## Error Analysis
+
+${errorDetails.map(detail => `- ${detail}`).join('\n')}
+
+## Crawling Methods Attempted
+
+- **Enhanced HTTP Client:** ${crawlResult.httpAttempts > 0 ? `${crawlResult.httpAttempts} attempt(s)` : 'Not attempted'}
+- **Browser Automation Fallback:** ${crawlResult.browserFallbacks > 0 ? `${crawlResult.browserFallbacks} attempt(s)` : 'Not used'}
+
+## Detailed Error Log
+
+${crawlResult.errors.map(error => 
+  `### ${error.url}
+- **Method:** ${error.method}
+- **Error:** ${error.error}
+- **Time:** ${new Date(error.timestamp).toLocaleString()}
+
+`
+).join('')}
+
+## Recommendations
+
+${botDetectionErrors.length > 0 ? 
+  '- This website uses advanced bot protection (Cloudflare, CAPTCHA, etc.)\n- Consider using the website\'s official API if available\n- Manual content extraction may be required' :
+  accessErrors.length > 0 ?
+    '- This website restricts automated access\n- Check if authentication or special permissions are required\n- Verify the URL is publicly accessible' :
+    rateLimitErrors.length > 0 ?
+      '- This website is rate limiting requests\n- Try again later when rate limits reset\n- Consider crawling fewer pages or with longer delays' :
+      '- Check the URL is correct and the website is accessible\n- Verify your internet connection\n- The website may be temporarily unavailable'
+}
+`;
+
+        const metadata: DocumentMetadata = {
+          title: fileName,
+          wordCount: 0,
+          documentType: "url",
+          sourceFile: fileName,
+          error: errorSummary
+        };
+
+        return {
+          markdown: frontMatter,
+          metadata,
+          processingTimeMs: processingTime,
+          pagesCrawled: 0,
+          crawlErrors: crawlResult.errors.map(e => ({
+            url: e.url,
+            error: `[${e.method.toUpperCase()}] ${e.error}`,
+            timestamp: e.timestamp
+          }))
+        };
       }
 
       // Combine all pages into a single markdown document
       let markdown = "";
       const crawlSummary = [];
+      
+      // Count pages by method
+      const httpPages = crawlResult.pages.filter(p => p.method === 'http').length;
+      const browserPages = crawlResult.pages.filter(p => p.method === 'browser').length;
 
-      for (const page of crawledPages) {
-        // Add page header
+      for (const page of crawlResult.pages) {
+        // Add page header with method indicator
         markdown += `\n\n---\n\n# ${page.title}\n\n`;
         markdown += `**URL:** ${page.url}\n\n`;
+        markdown += `**Method:** ${page.method === 'http' ? '🌐 Enhanced HTTP' : '🤖 Browser Automation'}\n\n`;
         if (page.depth > 0) {
           markdown += `**Depth:** ${page.depth}\n\n`;
         }
@@ -377,22 +548,53 @@ modified: '${metadata.modified}'`
           url: page.url,
           title: page.title,
           depth: page.depth,
+          method: page.method,
           contentLength: page.content.length,
         });
       }
 
-      // Add comprehensive front matter
+      // Add comprehensive front matter with method statistics
       const frontMatter = `---
 source_url: ${url}
 title: "${fileName}"
 crawl_time: ${new Date().toISOString()}
 depth: ${depth}
 max_pages: ${maxPages}
-pages_crawled: ${crawledPages.length}
+pages_crawled: ${crawlResult.pages.length}
 processing_time_ms: ${processingTime}
+http_attempts: ${crawlResult.httpAttempts}
+browser_fallbacks: ${crawlResult.browserFallbacks}
+http_pages: ${httpPages}
+browser_pages: ${browserPages}
 pages_summary: ${JSON.stringify(crawlSummary, null, 2)}
+crawl_errors: ${JSON.stringify(crawlResult.errors, null, 2)}
 ---
 
+# Website Content: ${fileName}
+
+## Crawling Summary
+
+- **Total Pages:** ${crawlResult.pages.length}
+- **Processing Time:** ${(processingTime / 1000).toFixed(2)} seconds
+- **HTTP Success:** ${httpPages} page(s)
+- **Browser Fallback:** ${browserPages} page(s)
+- **Errors:** ${crawlResult.errors.length} page(s)
+
+${crawlResult.browserFallbacks > 0 ? 
+  '### Note: Some pages required browser automation due to anti-bot protection\n' : 
+  '### Note: All pages were successfully crawled using enhanced HTTP client\n'
+}
+
+${crawlResult.errors.length > 0 ? 
+  `### Crawling Issues
+${crawlResult.errors.map(error => 
+  `- **${error.url}**: ${error.error} (${error.method})`
+).join('\n')}
+
+` : ''
+}
+
+---
 `;
 
       markdown = frontMatter + markdown;
@@ -402,7 +604,7 @@ pages_summary: ${JSON.stringify(crawlSummary, null, 2)}
         .filter((word: string) => word.length > 0).length;
 
       const metadata: DocumentMetadata = {
-        title: `${fileName} (${crawledPages.length} pages)`,
+        title: `${fileName} (${crawlResult.pages.length} pages)`,
         wordCount,
         documentType: "url",
         sourceFile: url,
@@ -412,7 +614,15 @@ pages_summary: ${JSON.stringify(crawlSummary, null, 2)}
       return {
         markdown,
         metadata,
-        pagesCrawled: crawledPages.length,
+        processingTimeMs: processingTime,
+        pagesCrawled: crawlResult.pages.length,
+        crawlErrors: crawlResult.errors.map(e => ({
+          url: e.url,
+          error: `[${e.method.toUpperCase()}] ${e.error}`,
+          timestamp: e.timestamp
+        })),
+        httpAttempts: crawlResult.httpAttempts,
+        browserFallbacks: crawlResult.browserFallbacks
       };
     } catch (error) {
       throw new Error(
@@ -425,273 +635,41 @@ pages_summary: ${JSON.stringify(crawlSummary, null, 2)}
 
   /**
    * Crawl a website to specified depth and extract content from pages
+   * Note: This method has been deprecated in favor of AdvancedCrawler
    */
   private static async crawlWebsite(
     startUrl: string,
     maxDepth: number,
-    maxPages: number
-  ): Promise<
-    Array<{ url: string; title: string; content: string; depth: number }>
-  > {
-    console.log(
-      `[crawlWebsite] Starting crawl of ${startUrl} (maxDepth: ${maxDepth}, maxPages: ${maxPages})`
-    );
-
-    const visitedUrls = new Set<string>();
-    const crawledPages: Array<{
-      url: string;
-      title: string;
-      content: string;
-      depth: number;
-    }> = [];
-    const urlQueue: Array<{ url: string; depth: number }> = [
-      { url: startUrl, depth: 0 },
-    ];
-
-    // Get base domain to limit crawling to same domain
-    const baseDomain = new URL(startUrl).hostname;
-    console.log(`[crawlWebsite] Base domain: ${baseDomain}`);
-
-    while (urlQueue.length > 0 && crawledPages.length < maxPages) {
-      const { url, depth } = urlQueue.shift()!;
-      console.log(`[crawlWebsite] Processing URL: ${url} (depth: ${depth})`);
-
-      // Skip if already visited or depth exceeded
-      if (visitedUrls.has(url) || depth > maxDepth) {
-        console.log(
-          `[crawlWebsite] Skipping ${url} - already visited: ${visitedUrls.has(
-            url
-          )}, depth exceeded: ${depth > maxDepth}`
-        );
-        continue;
-      }
-
-      try {
-        visitedUrls.add(url);
-
-        // Add delay to be respectful to servers
-        if (crawledPages.length > 0) {
-          console.log(`[crawlWebsite] Adding 500ms delay before fetch...`);
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-
-        console.log(`[crawlWebsite] Fetching page: ${url}`);
-        const pageContent = await this.fetchAndProcessPage(url);
-        if (pageContent) {
-          console.log(
-            `[crawlWebsite] Successfully processed page: ${url} (title: ${pageContent.title}, content length: ${pageContent.content.length})`
-          );
-          crawledPages.push({
-            url,
-            title: pageContent.title,
-            content: pageContent.content,
-            depth,
-          });
-
-          // If we haven't reached max depth, extract links for next level
-          if (depth < maxDepth && crawledPages.length < maxPages) {
-            const links = this.extractLinks(pageContent.html, url, baseDomain);
-            for (const link of links) {
-              if (
-                !visitedUrls.has(link) &&
-                urlQueue.length + crawledPages.length < maxPages
-              ) {
-                urlQueue.push({ url: link, depth: depth + 1 });
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.warn(`Failed to crawl ${url}:`, error);
-        // Continue with other URLs even if one fails
-      }
-    }
-
-    return crawledPages;
-  }
-
-  /**
-   * Fetch and process a single page
-   */
-  private static async fetchAndProcessPage(
-    url: string
-  ): Promise<{ title: string; content: string; html: string } | null> {
-    try {
-      console.log(`[fetchAndProcessPage] Starting fetch for: ${url}`);
-
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; MMAI-Crawler/1.0)",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-        redirect: "follow",
-      });
-
-      console.log(
-        `[fetchAndProcessPage] Response status: ${response.status} ${response.statusText}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const contentType = response.headers.get("content-type") || "";
-      console.log(`[fetchAndProcessPage] Content-Type: ${contentType}`);
-
-      if (!contentType.includes("text/html")) {
-        throw new Error(`Not an HTML page: ${contentType}`);
-      }
-
-      console.log(`[fetchAndProcessPage] Reading HTML content...`);
-      const html = await response.text();
-      console.log(`[fetchAndProcessPage] HTML content length: ${html.length}`);
-
-      const title = this.extractTitle(html) || new URL(url).pathname;
-      console.log(`[fetchAndProcessPage] Extracted title: ${title}`);
-
-      console.log(`[fetchAndProcessPage] Converting HTML to markdown...`);
-      const content = this.htmlToMarkdown(html);
-      console.log(
-        `[fetchAndProcessPage] Markdown content length: ${content.length}`
-      );
-
-      if (content.length < 50) {
-        console.log(
-          `[fetchAndProcessPage] Skipping page with minimal content: ${content.length} chars`
-        );
-        return null; // Skip pages with very little content
-      }
-
-      console.log(`[fetchAndProcessPage] Successfully processed page: ${url}`);
-      return { title, content, html };
-    } catch (error) {
-      console.warn(`[fetchAndProcessPage] Failed to fetch ${url}:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Extract title from HTML
-   */
-  private static extractTitle(html: string): string {
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    if (titleMatch) {
-      return titleMatch[1].trim().replace(/\s+/g, " ");
-    }
-
-    // Fallback to h1
-    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    if (h1Match) {
-      return h1Match[1].trim().replace(/\s+/g, " ");
-    }
-
-    return "Untitled Page";
-  }
-
-  /**
-   * Convert HTML to markdown
-   */
-  private static htmlToMarkdown(html: string): string {
-    // Remove script and style tags completely
-    let markdown = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-      .replace(/<!--[\s\S]*?-->/g, "");
-
-    // Convert headers
-    markdown = markdown.replace(
-      /<h([1-6])[^>]*>([^<]*)<\/h[1-6]>/gi,
-      (match, level, content) => {
-        const cleanContent = content.replace(/<[^>]*>/g, "").trim();
-        return "\n" + "#".repeat(parseInt(level)) + " " + cleanContent + "\n\n";
-      }
-    );
-
-    // Convert paragraphs and basic formatting
-    markdown = markdown
-      .replace(/<p[^>]*>/gi, "\n")
-      .replace(/<\/p>/gi, "\n\n")
-      .replace(/<strong[^>]*>([^<]*)<\/strong>/gi, "**$1**")
-      .replace(/<b[^>]*>([^<]*)<\/b>/gi, "**$1**")
-      .replace(/<em[^>]*>([^<]*)<\/em>/gi, "*$1*")
-      .replace(/<i[^>]*>([^<]*)<\/i>/gi, "*$1*")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<hr[^>]*>/gi, "\n---\n")
-      .replace(/<li[^>]*>/gi, "- ")
-      .replace(/<\/li>/gi, "\n")
-      .replace(/<ul[^>]*>/gi, "\n")
-      .replace(/<\/ul>/gi, "\n")
-      .replace(/<ol[^>]*>/gi, "\n")
-      .replace(/<\/ol>/gi, "\n");
-
-    // Convert links
-    markdown = markdown.replace(
-      /<a[^>]*href=['"]([^'"]*)['"][^>]*>([^<]*)<\/a>/gi,
-      "[$2]($1)"
-    );
-
-    // Remove all remaining HTML tags
-    markdown = markdown.replace(/<[^>]*>/g, "");
-
-    // Clean up whitespace
-    markdown = markdown
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\n\s*\n\s*\n/g, "\n\n") // Multiple newlines to double
-      .replace(/[ \t]+/g, " ") // Multiple spaces to single
-      .trim();
-
-    return markdown;
-  }
-
-  /**
-   * Extract links from HTML page
-   */
-  private static extractLinks(
-    html: string,
-    baseUrl: string,
-    baseDomain: string
-  ): string[] {
-    const links: string[] = [];
-    const linkRegex = /<a[^>]*href=['"]([^'"]*)['"][^>]*>/gi;
-    let match;
-
-    while ((match = linkRegex.exec(html)) !== null) {
-      try {
-        const href = match[1];
-
-        // Skip non-HTTP links
-        if (
-          href.startsWith("mailto:") ||
-          href.startsWith("tel:") ||
-          href.startsWith("javascript:")
-        ) {
-          continue;
-        }
-
-        // Resolve relative URLs
-        const absoluteUrl = new URL(href, baseUrl).href;
-        const linkDomain = new URL(absoluteUrl).hostname;
-
-        // Only include links from the same domain
-        if (linkDomain === baseDomain) {
-          // Remove fragments and normalize
-          const cleanUrl = absoluteUrl.split("#")[0];
-          if (!links.includes(cleanUrl)) {
-            links.push(cleanUrl);
-          }
-        }
-      } catch (error) {
-        // Skip invalid URLs
-        continue;
-      }
-    }
-
-    return links;
+    maxPages: number,
+    progressCallback?: (
+      currentUrl: string,
+      pageCount: number,
+      maxPages: number
+    ) => Promise<void>
+  ): Promise<{
+    pages: Array<{ url: string; title: string; content: string; depth: number }>;
+    errors: Array<{ url: string; error: string; timestamp: string }>;
+  }> {
+    // Use AdvancedCrawler for improved anti-bot detection
+    const result = await AdvancedCrawler.crawlWebsite(startUrl, {
+      maxDepth,
+      maxPages,
+      progressCallback
+    });
+    
+    // Convert the result format to match the expected interface
+    return {
+      pages: result.pages.map(page => ({
+        url: page.url,
+        title: page.title,
+        content: page.content,
+        depth: page.depth
+      })),
+      errors: result.errors.map(error => ({
+        url: error.url,
+        error: error.error,
+        timestamp: error.timestamp
+      }))
+    };
   }
 }

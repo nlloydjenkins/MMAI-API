@@ -97,7 +97,8 @@ export class JobManager {
     status: DocumentStatus,
     progress?: number,
     errorMessage?: string,
-    results?: ProcessingJob["results"]
+    results?: ProcessingJob["results"],
+    statusMessage?: string
   ): Promise<void> {
     const updateData = {
       partitionKey: "job",
@@ -112,6 +113,10 @@ export class JobManager {
 
     if (errorMessage !== undefined) {
       updateData.errorMessage = errorMessage;
+    }
+
+    if (statusMessage !== undefined) {
+      updateData.statusMessage = statusMessage;
     }
 
     if (results !== undefined) {
@@ -150,6 +155,7 @@ export class JobManager {
           "createdAt",
           "updatedAt",
           "errorMessage",
+          "statusMessage",
           "results",
         ],
       },

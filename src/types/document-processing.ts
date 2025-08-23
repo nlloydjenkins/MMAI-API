@@ -19,6 +19,7 @@ export interface ProcessingJob {
   createdAt: Date;
   updatedAt: Date;
   errorMessage?: string;
+  statusMessage?: string; // Live status updates (e.g., "Crawling: /docs/api (3/10)")
   results?: {
     markdownFiles: string[];
     chunkFiles: string[];

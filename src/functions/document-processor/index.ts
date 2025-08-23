@@ -56,11 +56,34 @@ export async function documentProcessorHandler(
       );
       await jobManager.updateJobStatus(jobMessage.jobId, "processing", 20);
 
+      // Create progress callback for real-time updates
+      const progressCallback = async (
+        currentUrl: string,
+        pageCount: number,
+        maxPages: number
+      ) => {
+        const progressPercent = Math.min(20 + (pageCount / maxPages) * 30, 50); // Progress from 20% to 50%
+        const statusMessage = `Crawling: ${
+          new URL(currentUrl).pathname
+        } (${pageCount}/${maxPages})`;
+
+        context.log(`Progress update: ${statusMessage} - ${progressPercent}%`);
+        await jobManager.updateJobStatus(
+          jobMessage.jobId,
+          "processing",
+          progressPercent,
+          undefined, // no error message
+          undefined, // no results yet
+          statusMessage
+        );
+      };
+
       conversionResult = await DocumentConverter.convertUrl(
         jobMessage.inputSource,
         depth,
         maxPages,
-        jobMessage.fileName || "url-content"
+        jobMessage.fileName || "url-content",
+        progressCallback
       );
 
       context.log(
@@ -68,6 +91,33 @@ export async function documentProcessorHandler(
           conversionResult.pagesCrawled || 0
         }`
       );
+      
+      // Check if the conversion failed due to crawling errors (e.g., bot detection)
+      if (conversionResult.metadata.error) {
+        context.log(`URL processing failed: ${conversionResult.metadata.error}`);
+        
+        // Update job status to failed with detailed error information
+        const jobResults = {
+          markdownFiles: [],
+          chunkFiles: [],
+          indexedDocuments: 0,
+          processingTimeMs: conversionResult.processingTimeMs || 0,
+          pagesCrawled: conversionResult.pagesCrawled || 0,
+          crawlErrors: conversionResult.crawlErrors || []
+        };
+
+        await jobManager.updateJobStatus(
+          jobMessage.jobId,
+          "failed",
+          100,
+          conversionResult.metadata.error,
+          jobResults
+        );
+        
+        context.log(`Job ${jobMessage.jobId} marked as failed due to crawling errors`);
+        return;
+      }
+      
       await jobManager.updateJobStatus(jobMessage.jobId, "processing", 50);
     } else {
       // Handle file processing (existing logic)
@@ -164,9 +214,13 @@ export async function documentProcessorHandler(
       processingTimeMs: processingTime,
     };
 
-    // Add pagesCrawled for URL processing
+    // Add pagesCrawled and crawlErrors for URL processing
     if (jobMessage.inputType === "url" && conversionResult.pagesCrawled) {
       (jobResults as any).pagesCrawled = conversionResult.pagesCrawled;
+    }
+    
+    if (jobMessage.inputType === "url" && conversionResult.crawlErrors && conversionResult.crawlErrors.length > 0) {
+      (jobResults as any).crawlErrors = conversionResult.crawlErrors;
     }
 
     await jobManager.updateJobStatus(

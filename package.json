@@ -43,6 +43,9 @@
     "mime-types": "^2.1.35",
     "openai": "^4.52.0",
     "pdf-parse": "^1.1.1",
+    "playwright": "^1.55.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "uuid": "^10.0.0",
     "xlsx": "^0.18.5"
   },

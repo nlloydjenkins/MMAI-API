@@ -49,6 +49,7 @@ export async function jobStatusHandler(
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
         errorMessage: job.errorMessage,
+        statusMessage: (job as any).statusMessage,
         results: job.results,
       }),
     };
@@ -110,6 +111,7 @@ export async function jobListHandler(
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
           errorMessage: job.errorMessage,
+          statusMessage: (job as any).statusMessage,
           results: job.results,
         })),
         totalJobs: result.jobs.length,
