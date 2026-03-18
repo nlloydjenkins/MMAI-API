@@ -6,29 +6,31 @@ const connectionString =
 
 async function initializeTables() {
   try {
-
     const tableService = TableServiceClient.fromConnectionString(
       connectionString,
       {
         allowInsecureConnection: true,
-      }
+      },
     );
 
-    // Create the projects table
-    const projectsTableName = "projects";
-    
-    await tableService.createTable(projectsTableName);
-
-    // Create the files table
-    const filesTableName = "files";
-    
-    await tableService.createTable(filesTableName);
-
+    const tables = ["projects", "files", "processingJobs"];
+    for (const tableName of tables) {
+      try {
+        await tableService.createTable(tableName);
+        console.log(`✅ Table '${tableName}' created`);
+      } catch (err) {
+        if (err.statusCode === 409) {
+          console.log(`✅ Table '${tableName}' already exists`);
+        } else {
+          throw err;
+        }
+      }
+    }
   } catch (error) {
     if (error.statusCode === 409) {
-      
+      // all tables already exist, that's fine
     } else {
-      
+      console.error("Error initializing tables:", error);
       process.exit(1);
     }
   }

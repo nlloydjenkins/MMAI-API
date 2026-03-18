@@ -1,7 +1,19 @@
-import { QueueServiceClient, QueueClient } from '@azure/storage-queue';
-import { AzureClients } from './azure-config.js';
-import { DefaultAzureCredential } from '@azure/identity';
-import { ProcessingJobMessage, ChunkingJobMessage, IndexingJobMessage } from '../types/document-processing.js';
+import { QueueServiceClient, QueueClient } from "@azure/storage-queue";
+import { AzureClients, isLocalStorage } from "./azure-config.js";
+import { DefaultAzureCredential } from "@azure/identity";
+import {
+  ProcessingJobMessage,
+  ChunkingJobMessage,
+  IndexingJobMessage,
+} from "../types/document-processing.js";
+
+// Azurite well-known connection string for local development
+const AZURITE_CONNECTION_STRING =
+  "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;" +
+  "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;" +
+  "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;" +
+  "QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;" +
+  "TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;";
 
 export class DocumentQueueClient {
   private queueServiceClient: QueueServiceClient;
@@ -10,22 +22,33 @@ export class DocumentQueueClient {
   private indexingQueue: QueueClient;
 
   constructor() {
-    const azureClients = AzureClients.getInstance();
-    const config = azureClients.getConfig();
-    
-    if (!config.storage.accountName) {
-      throw new Error('Azure Storage Account Name not configured');
-    }
-    
-    const credential = new DefaultAzureCredential();
-    this.queueServiceClient = new QueueServiceClient(
-      `https://${config.storage.accountName}.queue.core.windows.net`,
-      credential
-    );
+    if (isLocalStorage()) {
+      console.log("🔧 [QUEUE] Using Azurite for local queue storage");
+      this.queueServiceClient = QueueServiceClient.fromConnectionString(
+        AZURITE_CONNECTION_STRING,
+      );
+    } else {
+      const azureClients = AzureClients.getInstance();
+      const config = azureClients.getConfig();
 
-    this.processingQueue = this.queueServiceClient.getQueueClient('document-processing');
-    this.chunkingQueue = this.queueServiceClient.getQueueClient('document-chunking');
-    this.indexingQueue = this.queueServiceClient.getQueueClient('document-indexing');
+      if (!config.storage.accountName) {
+        throw new Error("Azure Storage Account Name not configured");
+      }
+
+      const credential = new DefaultAzureCredential();
+      this.queueServiceClient = new QueueServiceClient(
+        `https://${config.storage.accountName}.queue.core.windows.net`,
+        credential,
+      );
+    }
+
+    this.processingQueue = this.queueServiceClient.getQueueClient(
+      "document-processing",
+    );
+    this.chunkingQueue =
+      this.queueServiceClient.getQueueClient("document-chunking");
+    this.indexingQueue =
+      this.queueServiceClient.getQueueClient("document-indexing");
   }
 
   async initializeQueues(): Promise<void> {
@@ -34,41 +57,43 @@ export class DocumentQueueClient {
       await this.chunkingQueue.createIfNotExists();
       await this.indexingQueue.createIfNotExists();
     } catch (error) {
-      console.error('Failed to initialize queues:', error);
+      console.error("Failed to initialize queues:", error);
       throw error;
     }
   }
 
   async sendProcessingJob(jobMessage: ProcessingJobMessage): Promise<void> {
-    const message = Buffer.from(JSON.stringify(jobMessage)).toString('base64');
+    const message = Buffer.from(JSON.stringify(jobMessage)).toString("base64");
     await this.processingQueue.sendMessage(message);
   }
 
   async sendChunkingJob(jobMessage: ChunkingJobMessage): Promise<void> {
-    const message = Buffer.from(JSON.stringify(jobMessage)).toString('base64');
+    const message = Buffer.from(JSON.stringify(jobMessage)).toString("base64");
     await this.chunkingQueue.sendMessage(message);
   }
 
   async sendIndexingJob(jobMessage: IndexingJobMessage): Promise<void> {
-    const message = Buffer.from(JSON.stringify(jobMessage)).toString('base64');
+    const message = Buffer.from(JSON.stringify(jobMessage)).toString("base64");
     await this.indexingQueue.sendMessage(message);
   }
 
-  async getQueueLength(queueName: 'processing' | 'chunking' | 'indexing'): Promise<number> {
+  async getQueueLength(
+    queueName: "processing" | "chunking" | "indexing",
+  ): Promise<number> {
     try {
       let queue: QueueClient;
       switch (queueName) {
-        case 'processing':
+        case "processing":
           queue = this.processingQueue;
           break;
-        case 'chunking':
+        case "chunking":
           queue = this.chunkingQueue;
           break;
-        case 'indexing':
+        case "indexing":
           queue = this.indexingQueue;
           break;
       }
-      
+
       const properties = await queue.getProperties();
       return properties.approximateMessagesCount || 0;
     } catch (error) {
@@ -77,21 +102,23 @@ export class DocumentQueueClient {
     }
   }
 
-  async clearQueue(queueName: 'processing' | 'chunking' | 'indexing'): Promise<void> {
+  async clearQueue(
+    queueName: "processing" | "chunking" | "indexing",
+  ): Promise<void> {
     try {
       let queue: QueueClient;
       switch (queueName) {
-        case 'processing':
+        case "processing":
           queue = this.processingQueue;
           break;
-        case 'chunking':
+        case "chunking":
           queue = this.chunkingQueue;
           break;
-        case 'indexing':
+        case "indexing":
           queue = this.indexingQueue;
           break;
       }
-      
+
       await queue.clearMessages();
     } catch (error) {
       console.error(`Failed to clear queue ${queueName}:`, error);

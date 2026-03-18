@@ -21,7 +21,7 @@
     "start": "func start",
     "version:increment": "node scripts/increment-version.js",
     "version:update": "node scripts/update-version.js",
-    "init-tables": "node scripts/init-tables.js",
+    "init-tables": "node scripts/init-tables.cjs",
     "init-tables-azure": "node scripts/init-tables-azure.js",
     "cleanup-orphan-blobs": "node scripts/cleanup-orphan-blobs.js",
     "check-project-id-stats": "node scripts/check-project-id-stats.js",

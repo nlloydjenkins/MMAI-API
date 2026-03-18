@@ -12,6 +12,7 @@ import {
 import { PromptRequest, PromptResponse } from "../../shared/types";
 import { AzureClients } from "../../shared/azure-config";
 import { searchWithProjectFilter } from "../../shared/project-search-utils";
+import { DefaultAzureCredential } from "@azure/identity";
 
 interface SearchResult {
   id: string;
@@ -25,7 +26,7 @@ interface SearchResult {
 async function searchRelevantDocuments(
   query: string,
   projectId?: string,
-  context?: InvocationContext
+  context?: InvocationContext,
 ): Promise<SearchResult[]> {
   try {
     const azureClients = AzureClients.getInstance();
@@ -51,7 +52,7 @@ async function searchRelevantDocuments(
 
     context?.log(
       "🔍 [PROMPT SEARCH DEBUG] Searching for relevant documents with query:",
-      query
+      query,
     );
     context?.log("🔍 [PROMPT SEARCH DEBUG] ProjectId:", projectId);
 
@@ -61,7 +62,7 @@ async function searchRelevantDocuments(
       query,
       projectId || null,
       searchOptions,
-      context
+      context,
     );
 
     const results: SearchResult[] = [];
@@ -83,7 +84,7 @@ async function searchRelevantDocuments(
     }
 
     context?.log(
-      `🔍 [PROMPT SEARCH DEBUG] Found ${results.length} relevant documents`
+      `🔍 [PROMPT SEARCH DEBUG] Found ${results.length} relevant documents`,
     );
 
     // Log search results for debugging
@@ -94,11 +95,11 @@ async function searchRelevantDocuments(
           fileName: r.fileName,
           score: r.score,
           contentPreview: r.content.substring(0, 100) + "...",
-        }))
+        })),
       );
     } else {
       context?.log(
-        "🔍 [PROMPT SEARCH DEBUG] No documents found - checking if this is expected"
+        "🔍 [PROMPT SEARCH DEBUG] No documents found - checking if this is expected",
       );
     }
     return results;
@@ -110,7 +111,7 @@ async function searchRelevantDocuments(
 
 export async function runPrompt(
   request: HttpRequest,
-  context: InvocationContext
+  context: InvocationContext,
 ): Promise<HttpResponseInit> {
   context.log("HTTP trigger function processed a runPrompt request.");
 
@@ -127,7 +128,7 @@ export async function runPrompt(
         405,
         "METHOD_NOT_ALLOWED",
         "Only POST method is allowed",
-        request
+        request,
       );
     }
 
@@ -140,7 +141,7 @@ export async function runPrompt(
         400,
         "VALIDATION_ERROR",
         "Question is required",
-        request
+        request,
       );
     }
 
@@ -153,7 +154,7 @@ export async function runPrompt(
     const searchResults = await searchRelevantDocuments(
       requestData.question,
       requestData.projectId,
-      context
+      context,
     );
 
     // Construct the prompt with search results context
@@ -185,7 +186,7 @@ Question: ${requestData.question}
 Please provide a comprehensive answer based on the information in the documents above. If the documents don't contain sufficient information to answer the question, please indicate what additional information might be needed.`;
     } else {
       context.log(
-        "No relevant documents found, proceeding with general knowledge"
+        "No relevant documents found, proceeding with general knowledge",
       );
       contextualPrompt = `${requestData.question}
 
@@ -197,7 +198,7 @@ Note: No specific documents were found in your knowledge base related to this qu
       const additionalContext = requestData.searchResults
         .map(
           (result, index) =>
-            `Additional Context ${index + 1}: ${JSON.stringify(result)}`
+            `Additional Context ${index + 1}: ${JSON.stringify(result)}`,
         )
         .join("\n");
       contextualPrompt += `\n\nAdditional Context:\n${additionalContext}`;
@@ -224,11 +225,21 @@ Note: No specific documents were found in your knowledge base related to this qu
           ? Math.max(0, Math.min(1, (requestData as any).topP))
           : 1.0;
 
+      // Get an Entra ID bearer token for Azure OpenAI
+      const tenantId = process.env.AZURE_OPENAI_TENANT_ID;
+      const credential = new DefaultAzureCredential({
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const tokenResponse = await credential.getToken(
+        "https://cognitiveservices.azure.com/.default",
+        ...(tenantId ? [{ tenantId }] : []),
+      );
+
       const response = await fetch(openaiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "api-key": config.openai.apiKey,
+          Authorization: `Bearer ${tokenResponse.token}`,
         },
         body: JSON.stringify({
           messages: [
@@ -262,7 +273,7 @@ Note: No specific documents were found in your knowledge base related to this qu
         const debugAllowed = process.env.OPENAI_DEBUG === "true";
         if (debugAllowed) {
           context.log(
-            "Returning verbose OpenAI debug response (OPENAI_DEBUG=true)"
+            "Returning verbose OpenAI debug response (OPENAI_DEBUG=true)",
           );
           const debugResponse = `⚠️ **Development Mode - Azure OpenAI API Error**\n\n**Original Prompt Sent:**\n${contextualPrompt}\n\n**API Error Details:**\n${errorText}\n\n**Configuration Check:**\n- Endpoint: ${config.openai.endpoint}\n- Deployment: ${config.openai.deployment}\n- API Version: ${config.openai.apiVersion}\n\nThis shows the actual prompt that was sent to Azure OpenAI. In production, this would return AI-generated strategic advice based on your project data.\n\n**Troubleshooting Steps:**\n1. Verify Azure OpenAI endpoint URL is correct\n2. Check API key permissions and validity\n3. Ensure deployment name matches Azure resource\n4. Confirm quota availability in Azure portal\n5. Test network connectivity to Azure services`;
           const result: PromptResponse = {
@@ -294,12 +305,12 @@ Note: No specific documents were found in your knowledge base related to this qu
     } catch (fetchError) {
       context.log(
         "Fetch error calling OpenAI (raw logged, suppressed to client)",
-        fetchError
+        fetchError,
       );
       const debugAllowed = process.env.OPENAI_DEBUG === "true";
       if (debugAllowed) {
         const debugResponse = `⚠️ **Development Mode - Network/Fetch Error**\n\n**Original Prompt Sent:**\n${contextualPrompt}\n\n**Network Error Details:**\n${String(
-          fetchError
+          fetchError,
         )}\n\n**Configuration Being Used:**\n- Endpoint: ${
           config.openai.endpoint
         }\n- Deployment: ${config.openai.deployment}\n- API Version: ${
@@ -322,7 +333,7 @@ Note: No specific documents were found in your knowledge base related to this qu
       500,
       "INTERNAL_ERROR",
       "Failed to run prompt",
-      request
+      request,
     );
   }
 }

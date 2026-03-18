@@ -1,28 +1,42 @@
 import { TableServiceClient, TableClient, odata } from "@azure/data-tables";
-import { AzureClients } from "./azure-config.js";
+import { AzureClients, isLocalStorage } from "./azure-config.js";
 import { DefaultAzureCredential } from "@azure/identity";
 import { ProcessingJob, DocumentStatus } from "../types/document-processing.js";
 import { v4 as uuidv4 } from "uuid";
+
+const AZURITE_CONNECTION_STRING =
+  "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;" +
+  "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;" +
+  "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;" +
+  "QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;" +
+  "TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;";
 
 export class JobManager {
   private tableClient: TableClient;
 
   constructor() {
-    // For now, create a separate table client for processing jobs
-    // since AzureClients doesn't have this table configured yet
-    const azureClients = AzureClients.getInstance();
-    const config = azureClients.getConfig();
+    if (isLocalStorage()) {
+      console.log("🔧 [JOB MANAGER] Using Azurite for processingJobs table");
+      this.tableClient = TableClient.fromConnectionString(
+        AZURITE_CONNECTION_STRING,
+        "processingJobs",
+        { allowInsecureConnection: true },
+      );
+    } else {
+      const azureClients = AzureClients.getInstance();
+      const config = azureClients.getConfig();
 
-    if (!config.storage.accountName) {
-      throw new Error("Azure Storage Account Name not configured");
+      if (!config.storage.accountName) {
+        throw new Error("Azure Storage Account Name not configured");
+      }
+
+      const credential = new DefaultAzureCredential();
+      this.tableClient = new TableClient(
+        `https://${config.storage.accountName}.table.core.windows.net`,
+        "processingJobs",
+        credential,
+      );
     }
-
-    const credential = new DefaultAzureCredential();
-    this.tableClient = new TableClient(
-      `https://${config.storage.accountName}.table.core.windows.net`,
-      "processingJobs",
-      credential
-    );
   }
 
   async initializeTable(): Promise<void> {
@@ -44,7 +58,7 @@ export class JobManager {
     inputSource: string,
     fileName?: string,
     fileSize?: number,
-    mimeType?: string
+    mimeType?: string,
   ): Promise<ProcessingJob> {
     const jobId = uuidv4();
     const now = new Date();
@@ -98,7 +112,7 @@ export class JobManager {
     progress?: number,
     errorMessage?: string,
     results?: ProcessingJob["results"],
-    statusMessage?: string
+    statusMessage?: string,
   ): Promise<void> {
     const updateData = {
       partitionKey: "job",
@@ -130,7 +144,7 @@ export class JobManager {
     userId: string,
     projectId?: string,
     limit: number = 50,
-    continuationToken?: string
+    continuationToken?: string,
   ): Promise<{ jobs: ProcessingJob[]; continuationToken?: string }> {
     let filter = odata`PartitionKey eq 'job' and userId eq ${userId}`;
 
@@ -184,7 +198,7 @@ export class JobManager {
     // Sort by creation date, newest first
     jobs.sort(
       (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
 
     return { jobs };
@@ -196,7 +210,7 @@ export class JobManager {
 
   async getJobStats(
     userId?: string,
-    projectId?: string
+    projectId?: string,
   ): Promise<{
     total: number;
     queued: number;

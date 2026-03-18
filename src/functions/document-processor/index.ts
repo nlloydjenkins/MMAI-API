@@ -91,11 +91,13 @@ export async function documentProcessorHandler(
           conversionResult.pagesCrawled || 0
         }`
       );
-      
+
       // Check if the conversion failed due to crawling errors (e.g., bot detection)
       if (conversionResult.metadata.error) {
-        context.log(`URL processing failed: ${conversionResult.metadata.error}`);
-        
+        context.log(
+          `URL processing failed: ${conversionResult.metadata.error}`
+        );
+
         // Update job status to failed with detailed error information
         const jobResults = {
           markdownFiles: [],
@@ -103,7 +105,7 @@ export async function documentProcessorHandler(
           indexedDocuments: 0,
           processingTimeMs: conversionResult.processingTimeMs || 0,
           pagesCrawled: conversionResult.pagesCrawled || 0,
-          crawlErrors: conversionResult.crawlErrors || []
+          crawlErrors: conversionResult.crawlErrors || [],
         };
 
         await jobManager.updateJobStatus(
@@ -113,11 +115,13 @@ export async function documentProcessorHandler(
           conversionResult.metadata.error,
           jobResults
         );
-        
-        context.log(`Job ${jobMessage.jobId} marked as failed due to crawling errors`);
+
+        context.log(
+          `Job ${jobMessage.jobId} marked as failed due to crawling errors`
+        );
         return;
       }
-      
+
       await jobManager.updateJobStatus(jobMessage.jobId, "processing", 50);
     } else {
       // Handle file processing (existing logic)
@@ -218,8 +222,12 @@ export async function documentProcessorHandler(
     if (jobMessage.inputType === "url" && conversionResult.pagesCrawled) {
       (jobResults as any).pagesCrawled = conversionResult.pagesCrawled;
     }
-    
-    if (jobMessage.inputType === "url" && conversionResult.crawlErrors && conversionResult.crawlErrors.length > 0) {
+
+    if (
+      jobMessage.inputType === "url" &&
+      conversionResult.crawlErrors &&
+      conversionResult.crawlErrors.length > 0
+    ) {
       (jobResults as any).crawlErrors = conversionResult.crawlErrors;
     }
 

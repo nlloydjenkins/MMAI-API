@@ -362,22 +362,28 @@ modified: '${metadata.modified}'`
 
       const startTime = Date.now();
       console.log(`[DocumentConverter] Starting advanced website crawl...`);
-      
+
       // Enhanced progress callback with method information
-      const enhancedProgressCallback = async (currentUrl: string, pageCount: number, maxPages: number) => {
+      const enhancedProgressCallback = async (
+        currentUrl: string,
+        pageCount: number,
+        maxPages: number
+      ) => {
         if (progressCallback) {
           // Determine current method being used
-          const method = currentUrl.includes('browser-fallback') ? 'browser automation' : 'enhanced HTTP';
+          const method = currentUrl.includes("browser-fallback")
+            ? "browser automation"
+            : "enhanced HTTP";
           await progressCallback(currentUrl, pageCount, maxPages);
         }
       };
-      
+
       const crawlResult = await AdvancedCrawler.crawlWebsite(url, {
         maxDepth: depth,
         maxPages,
-        progressCallback: enhancedProgressCallback
+        progressCallback: enhancedProgressCallback,
       });
-      
+
       const processingTime = Date.now() - startTime;
       console.log(
         `[DocumentConverter] Advanced crawling completed in ${processingTime}ms. Pages: ${crawlResult.pages.length}, Errors: ${crawlResult.errors.length}, HTTP attempts: ${crawlResult.httpAttempts}, Browser fallbacks: ${crawlResult.browserFallbacks}`
@@ -385,71 +391,89 @@ modified: '${metadata.modified}'`
 
       if (crawlResult.pages.length === 0) {
         console.error(`[DocumentConverter] No pages crawled from ${url}`);
-        
+
         // Analyze the types of errors encountered
-        const botDetectionErrors = crawlResult.errors.filter(error => 
-          error.error.toLowerCase().includes('bot detection') || 
-          error.error.toLowerCase().includes('cloudflare') ||
-          error.error.toLowerCase().includes('captcha') ||
-          error.error.toLowerCase().includes('anti-bot')
+        const botDetectionErrors = crawlResult.errors.filter(
+          (error) =>
+            error.error.toLowerCase().includes("bot detection") ||
+            error.error.toLowerCase().includes("cloudflare") ||
+            error.error.toLowerCase().includes("captcha") ||
+            error.error.toLowerCase().includes("anti-bot")
         );
-        
-        const accessErrors = crawlResult.errors.filter(error => 
-          error.error.includes('403') || 
-          error.error.includes('401') ||
-          error.error.toLowerCase().includes('forbidden') ||
-          error.error.toLowerCase().includes('unauthorized')
+
+        const accessErrors = crawlResult.errors.filter(
+          (error) =>
+            error.error.includes("403") ||
+            error.error.includes("401") ||
+            error.error.toLowerCase().includes("forbidden") ||
+            error.error.toLowerCase().includes("unauthorized")
         );
-        
-        const rateLimitErrors = crawlResult.errors.filter(error => 
-          error.error.includes('429') ||
-          error.error.toLowerCase().includes('rate limit') ||
-          error.error.toLowerCase().includes('too many requests')
+
+        const rateLimitErrors = crawlResult.errors.filter(
+          (error) =>
+            error.error.includes("429") ||
+            error.error.toLowerCase().includes("rate limit") ||
+            error.error.toLowerCase().includes("too many requests")
         );
-        
+
         // Create detailed error summary
         let errorSummary = "Failed to crawl any pages from the provided URL";
         let errorDetails = [];
-        
+
         if (botDetectionErrors.length > 0) {
-          errorSummary = "Website is using anti-bot protection that prevented crawling";
-          errorDetails.push(`${botDetectionErrors.length} page(s) blocked by bot detection`);
-          
+          errorSummary =
+            "Website is using anti-bot protection that prevented crawling";
+          errorDetails.push(
+            `${botDetectionErrors.length} page(s) blocked by bot detection`
+          );
+
           if (crawlResult.browserFallbacks > 0) {
-            errorDetails.push(`Tried browser automation fallback but still blocked`);
+            errorDetails.push(
+              `Tried browser automation fallback but still blocked`
+            );
           }
         }
-        
+
         if (accessErrors.length > 0) {
-          errorDetails.push(`${accessErrors.length} page(s) returned access denied errors`);
+          errorDetails.push(
+            `${accessErrors.length} page(s) returned access denied errors`
+          );
         }
-        
+
         if (rateLimitErrors.length > 0) {
-          errorDetails.push(`${rateLimitErrors.length} page(s) failed due to rate limiting`);
+          errorDetails.push(
+            `${rateLimitErrors.length} page(s) failed due to rate limiting`
+          );
         }
-        
+
         if (errorDetails.length === 0 && crawlResult.errors.length > 0) {
-          const errorTypes = [...new Set(crawlResult.errors.map(e => {
-            const match = e.error.match(/^[^:]+/);
-            return match ? match[0] : 'Unknown error';
-          }))];
+          const errorTypes = [
+            ...new Set(
+              crawlResult.errors.map((e) => {
+                const match = e.error.match(/^[^:]+/);
+                return match ? match[0] : "Unknown error";
+              })
+            ),
+          ];
           errorSummary = `All pages failed to crawl`;
-          errorDetails.push(`Error types: ${errorTypes.join(', ')}`);
+          errorDetails.push(`Error types: ${errorTypes.join(", ")}`);
         }
-        
+
         // Add crawling method statistics
         const methodStats = [];
         if (crawlResult.httpAttempts > 0) {
           methodStats.push(`${crawlResult.httpAttempts} HTTP attempt(s)`);
         }
         if (crawlResult.browserFallbacks > 0) {
-          methodStats.push(`${crawlResult.browserFallbacks} browser fallback(s)`);
+          methodStats.push(
+            `${crawlResult.browserFallbacks} browser fallback(s)`
+          );
         }
-        
+
         if (methodStats.length > 0) {
-          errorDetails.push(`Methods tried: ${methodStats.join(', ')}`);
+          errorDetails.push(`Methods tried: ${methodStats.join(", ")}`);
         }
-        
+
         // Return a result with enhanced error information instead of throwing
         const frontMatter = `---
 source_url: ${url}
@@ -473,33 +497,45 @@ crawl_errors: ${JSON.stringify(crawlResult.errors, null, 2)}
 
 ## Error Analysis
 
-${errorDetails.map(detail => `- ${detail}`).join('\n')}
+${errorDetails.map((detail) => `- ${detail}`).join("\n")}
 
 ## Crawling Methods Attempted
 
-- **Enhanced HTTP Client:** ${crawlResult.httpAttempts > 0 ? `${crawlResult.httpAttempts} attempt(s)` : 'Not attempted'}
-- **Browser Automation Fallback:** ${crawlResult.browserFallbacks > 0 ? `${crawlResult.browserFallbacks} attempt(s)` : 'Not used'}
+- **Enhanced HTTP Client:** ${
+          crawlResult.httpAttempts > 0
+            ? `${crawlResult.httpAttempts} attempt(s)`
+            : "Not attempted"
+        }
+- **Browser Automation Fallback:** ${
+          crawlResult.browserFallbacks > 0
+            ? `${crawlResult.browserFallbacks} attempt(s)`
+            : "Not used"
+        }
 
 ## Detailed Error Log
 
-${crawlResult.errors.map(error => 
-  `### ${error.url}
+${crawlResult.errors
+  .map(
+    (error) =>
+      `### ${error.url}
 - **Method:** ${error.method}
 - **Error:** ${error.error}
 - **Time:** ${new Date(error.timestamp).toLocaleString()}
 
 `
-).join('')}
+  )
+  .join("")}
 
 ## Recommendations
 
-${botDetectionErrors.length > 0 ? 
-  '- This website uses advanced bot protection (Cloudflare, CAPTCHA, etc.)\n- Consider using the website\'s official API if available\n- Manual content extraction may be required' :
-  accessErrors.length > 0 ?
-    '- This website restricts automated access\n- Check if authentication or special permissions are required\n- Verify the URL is publicly accessible' :
-    rateLimitErrors.length > 0 ?
-      '- This website is rate limiting requests\n- Try again later when rate limits reset\n- Consider crawling fewer pages or with longer delays' :
-      '- Check the URL is correct and the website is accessible\n- Verify your internet connection\n- The website may be temporarily unavailable'
+${
+  botDetectionErrors.length > 0
+    ? "- This website uses advanced bot protection (Cloudflare, CAPTCHA, etc.)\n- Consider using the website's official API if available\n- Manual content extraction may be required"
+    : accessErrors.length > 0
+    ? "- This website restricts automated access\n- Check if authentication or special permissions are required\n- Verify the URL is publicly accessible"
+    : rateLimitErrors.length > 0
+    ? "- This website is rate limiting requests\n- Try again later when rate limits reset\n- Consider crawling fewer pages or with longer delays"
+    : "- Check the URL is correct and the website is accessible\n- Verify your internet connection\n- The website may be temporarily unavailable"
 }
 `;
 
@@ -508,7 +544,7 @@ ${botDetectionErrors.length > 0 ?
           wordCount: 0,
           documentType: "url",
           sourceFile: fileName,
-          error: errorSummary
+          error: errorSummary,
         };
 
         return {
@@ -516,27 +552,33 @@ ${botDetectionErrors.length > 0 ?
           metadata,
           processingTimeMs: processingTime,
           pagesCrawled: 0,
-          crawlErrors: crawlResult.errors.map(e => ({
+          crawlErrors: crawlResult.errors.map((e) => ({
             url: e.url,
             error: `[${e.method.toUpperCase()}] ${e.error}`,
-            timestamp: e.timestamp
-          }))
+            timestamp: e.timestamp,
+          })),
         };
       }
 
       // Combine all pages into a single markdown document
       let markdown = "";
       const crawlSummary = [];
-      
+
       // Count pages by method
-      const httpPages = crawlResult.pages.filter(p => p.method === 'http').length;
-      const browserPages = crawlResult.pages.filter(p => p.method === 'browser').length;
+      const httpPages = crawlResult.pages.filter(
+        (p) => p.method === "http"
+      ).length;
+      const browserPages = crawlResult.pages.filter(
+        (p) => p.method === "browser"
+      ).length;
 
       for (const page of crawlResult.pages) {
         // Add page header with method indicator
         markdown += `\n\n---\n\n# ${page.title}\n\n`;
         markdown += `**URL:** ${page.url}\n\n`;
-        markdown += `**Method:** ${page.method === 'http' ? '🌐 Enhanced HTTP' : '🤖 Browser Automation'}\n\n`;
+        markdown += `**Method:** ${
+          page.method === "http" ? "🌐 Enhanced HTTP" : "🤖 Browser Automation"
+        }\n\n`;
         if (page.depth > 0) {
           markdown += `**Depth:** ${page.depth}\n\n`;
         }
@@ -580,18 +622,21 @@ crawl_errors: ${JSON.stringify(crawlResult.errors, null, 2)}
 - **Browser Fallback:** ${browserPages} page(s)
 - **Errors:** ${crawlResult.errors.length} page(s)
 
-${crawlResult.browserFallbacks > 0 ? 
-  '### Note: Some pages required browser automation due to anti-bot protection\n' : 
-  '### Note: All pages were successfully crawled using enhanced HTTP client\n'
+${
+  crawlResult.browserFallbacks > 0
+    ? "### Note: Some pages required browser automation due to anti-bot protection\n"
+    : "### Note: All pages were successfully crawled using enhanced HTTP client\n"
 }
 
-${crawlResult.errors.length > 0 ? 
-  `### Crawling Issues
-${crawlResult.errors.map(error => 
-  `- **${error.url}**: ${error.error} (${error.method})`
-).join('\n')}
+${
+  crawlResult.errors.length > 0
+    ? `### Crawling Issues
+${crawlResult.errors
+  .map((error) => `- **${error.url}**: ${error.error} (${error.method})`)
+  .join("\n")}
 
-` : ''
+`
+    : ""
 }
 
 ---
@@ -616,13 +661,13 @@ ${crawlResult.errors.map(error =>
         metadata,
         processingTimeMs: processingTime,
         pagesCrawled: crawlResult.pages.length,
-        crawlErrors: crawlResult.errors.map(e => ({
+        crawlErrors: crawlResult.errors.map((e) => ({
           url: e.url,
           error: `[${e.method.toUpperCase()}] ${e.error}`,
-          timestamp: e.timestamp
+          timestamp: e.timestamp,
         })),
         httpAttempts: crawlResult.httpAttempts,
-        browserFallbacks: crawlResult.browserFallbacks
+        browserFallbacks: crawlResult.browserFallbacks,
       };
     } catch (error) {
       throw new Error(
@@ -647,29 +692,34 @@ ${crawlResult.errors.map(error =>
       maxPages: number
     ) => Promise<void>
   ): Promise<{
-    pages: Array<{ url: string; title: string; content: string; depth: number }>;
+    pages: Array<{
+      url: string;
+      title: string;
+      content: string;
+      depth: number;
+    }>;
     errors: Array<{ url: string; error: string; timestamp: string }>;
   }> {
     // Use AdvancedCrawler for improved anti-bot detection
     const result = await AdvancedCrawler.crawlWebsite(startUrl, {
       maxDepth,
       maxPages,
-      progressCallback
+      progressCallback,
     });
-    
+
     // Convert the result format to match the expected interface
     return {
-      pages: result.pages.map(page => ({
+      pages: result.pages.map((page) => ({
         url: page.url,
         title: page.title,
         content: page.content,
-        depth: page.depth
+        depth: page.depth,
       })),
-      errors: result.errors.map(error => ({
+      errors: result.errors.map((error) => ({
         url: error.url,
         error: error.error,
-        timestamp: error.timestamp
-      }))
+        timestamp: error.timestamp,
+      })),
     };
   }
 }
